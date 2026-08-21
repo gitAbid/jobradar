@@ -20,7 +20,7 @@ export function SkillSidebar({ skills }: Props) {
     (name: string) => {
       const next = new URLSearchParams(params.toString());
       const current = next.getAll("skill");
-      next.delete("skill");
+      next.delete("page"); // filters changed → back to first page
       const updated = current.includes(name)
         ? current.filter((s) => s !== name)
         : [...current, name];
@@ -33,6 +33,7 @@ export function SkillSidebar({ skills }: Props) {
   const clearAll = useCallback(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("skill");
+    next.delete("page");
     router.push(`/?${next.toString()}`);
   }, [params, router]);
 

@@ -6,7 +6,10 @@ import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
 import { RefreshButton } from "@/components/RefreshButton";
 import { SkillSidebar } from "@/components/SkillSidebar";
+import { Pagination } from "@/components/Pagination";
 import { connection } from "next/server";
+
+const PAGE_SIZE = 20;
 
 interface SearchParams {
   q?: string;
@@ -16,6 +19,7 @@ interface SearchParams {
   visa?: string;
   showAll?: string;
   skill?: string | string[];
+  page?: string;
 }
 
 export default async function DashboardPage({
@@ -119,6 +123,16 @@ export default async function DashboardPage({
     return true;
   });
 
+  // ── Pagination ─────────────────────────────────────────────────────────
+  const totalVisible = visible.length;
+  const totalPages = Math.max(1, Math.ceil(totalVisible / PAGE_SIZE));
+  const requestedPage = Number.parseInt(sp.page ?? "1", 10);
+  const currentPage = Math.min(
+    Math.max(Number.isNaN(requestedPage) ? 1 : requestedPage, 1),
+    totalPages,
+  );
+  visible = visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   const boards = (
     db.prepare("SELECT id, name FROM boards ORDER BY name").all() as {
       id: number;
@@ -135,7 +149,7 @@ export default async function DashboardPage({
           <div>
             <h1 className="text-xl font-bold">Dashboard</h1>
             <p className="text-sm text-slate-500">
-              {totalNew} new · {visible.length} shown
+              {totalNew} new · {totalVisible} shown
               {selectedSkills.length > 0 && ` · skills: ${selectedSkills.join(", ")}`}
               {!showAll && " (matching your keywords — toggle “Show all” to see everything)"}
             </p>
@@ -151,11 +165,18 @@ export default async function DashboardPage({
             or add more boards on the <a href="/boards" className="underline">Boards</a> page.
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {visible.map(({ listing, matched }) => (
-              <ListingCard key={listing.id} listing={listing} matched={matched} />
-            ))}
-          </div>
+          <>
+            <div className="flex flex-col gap-3">
+              {visible.map(({ listing, matched }) => (
+                <ListingCard key={listing.id} listing={listing} matched={matched} />
+              ))}
+            </div>
+            <p className="text-center text-xs text-slate-400">
+              Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+              {Math.min(currentPage * PAGE_SIZE, totalVisible)} of {totalVisible}
+            </p>
+            <Pagination currentPage={currentPage} totalPages={totalPages} />
+          </>
         )}
       </div>
     </div>

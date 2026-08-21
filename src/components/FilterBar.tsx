@@ -17,6 +17,7 @@ export function FilterBar({ boards }: Props) {
       const next = new URLSearchParams(params.toString());
       if (value) next.set(key, value);
       else next.delete(key);
+      next.delete("page"); // filters changed → back to first page
       router.push(`/?${next.toString()}`);
     },
     [params, router],
@@ -47,6 +48,7 @@ export function FilterBar({ boards }: Props) {
           className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
         />
       </form>
+
 
       <select
         value={status}
