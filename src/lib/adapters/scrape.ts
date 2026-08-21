@@ -92,8 +92,7 @@ function unescapeJsonString(s: string): string {
 const NEXTJOBZ_ITEM_RE =
   /"jobMasterId":(\d+),"jobTitle":"((?:[^"\\]|\\.)*)","jobCode":"([^"]+)","companyName":"((?:[^"\\]|\\.)*)","jobLocation":"((?:[^"\\]|\\.)*)","workType":"([^"]*)","employmentType":"([^"]*)"(?:,"jobSkills":"(\[[^\]]*\])")?(?:,"fromDate":"([^"]*)")?/g;
 
-export function parseNextJobzRsc(flight: string, baseUrl: string): NormalizedListing[] {
-  const origin = new URL(baseUrl).origin;
+export function parseNextJobzRsc(flight: string, baseUrl: string): NormalizedListing[] {  const origin = new URL(baseUrl).origin;
   const seen = new Map<string, NormalizedListing>();
   let m: RegExpExecArray | null;
   while ((m = NEXTJOBZ_ITEM_RE.exec(flight)) !== null) {
@@ -132,4 +131,108 @@ export function parseNextJobzRsc(flight: string, baseUrl: string): NormalizedLis
     throw new Error("no jobs found in nextjobz payload — structure may have changed");
   }
   return [...seen.values()];
+}
+
+// ── nextjobz sitemap + detail-page pipeline (full IT-jobs coverage) ────────
+
+/** Pull all job URLs out of nextjobz's sitemap-job-details.xml. */
+export function parseNextJobzSitemap(xml: string): string[] {
+  return [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]).filter((u) => u.includes("/jobs/"));
+}
+
+const TECH_SLUG_RE =
+  /(developer|engineer|software|java|spring|python|php|laravel|react|angular|vue|node|dotnet|-net-|devops|qa-|tester|test-|android|ios|flutter|fullstack|full-stack|backend|back-end|frontend|front-end|programmer|shopify|wordpress|web-|database|architect|scrum|technical|kotlin|scala|ruby|sre|security|network|system-admin|ui-|ux-|ict|it-support|cloud|data)/i;
+
+export function filterTechUrls(urls: string[]): string[] {
+  return urls.filter((u) => TECH_SLUG_RE.test(u));
+}
+
+function flightChunks(html: string): string {
+  return [...html.matchAll(/self\.__next_f\.push\(\[1,"(.*?)"\]\)/g)]
+    .map((m) => m[1])
+    .join("");
+}
+
+/**
+ * Decode a flight-payload string value: the capture keeps JSON escape
+ * sequences intact, so wrapping it in quotes and JSON.parse resolves
+ * \u003c, \" and \\ layers in one shot.
+ */
+function grabString(seg: string, field: string): string | null {
+  // lazy value + mandatory (backslash-optional) closing quote: stops at the
+  // first real field boundary while consuming escaped \" pairs inside values
+  const re = new RegExp(
+    `\\\\*"${field}\\\\*":\\\\*"((?:[^"\\\\]|\\\\.)*?)\\\\*"`,
+  );
+  const m = re.exec(seg);
+  if (!m) return null;
+  try {
+    return JSON.parse(`"${m[1]}"`) as string;
+  } catch {
+    return m[1];
+  }
+}
+
+/**
+ * Parse one nextjobz job detail page. The main job's structured object lives
+ * in the embedded RSC flight data before the "relevantJobs" section.
+ */
+export function parseNextJobzDetail(
+  html: string,
+  detailUrl: string,
+): NormalizedListing | null {
+  const code = detailUrl.match(/IJOB\d+/)?.[0];
+  if (!code) return null;
+
+  const joined = flightChunks(html);
+  const cutAt = joined.indexOf("relevantJobs");
+  const seg = cutAt > -1 ? joined.slice(0, cutAt) : joined;
+  if (!seg.includes(code)) return null; // main job not present
+
+  const title = grabString(seg, "strJobTitle");
+  if (!title) return null;
+  const company = grabString(seg, "strCompanyName") ?? "";
+  const jobLocation = grabString(seg, "strJobLocation") ?? "";
+  const country = grabString(seg, "strCountryName") || "Bangladesh";
+  const workType = grabString(seg, "strWorkType") ?? "";
+  const employmentType = grabString(seg, "strEmploymentType");
+  const salary = grabString(seg, "strSalaryDescription");
+  const years = grabString(seg, "strYearsOfExperience");
+  const description = grabString(seg, "strJobDescription")
+    ?.replace(/\\u003c/g, "<")
+    .replace(/\\u003e/g, ">")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const skillsRaw = grabString(seg, "strJobSkills");
+  const skills = skillsRaw
+    ? (() => {
+        try {
+          const v = JSON.parse(skillsRaw.replace(/\\"/g, '"'));
+          return Array.isArray(v) ? v.map(String).slice(0, 12) : [];
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  const loc = [jobLocation, country].filter(Boolean).join(", ");
+  return {
+    externalId: code,
+    title,
+    company,
+    location: loc || "Bangladesh",
+    isRemote: /remote/i.test(`${workType} ${title}`),
+    visaSponsorship: detectVisaSponsorship(description, title),
+    tags: [
+      ...skills,
+      ...(workType ? [workType] : []),
+      ...(employmentType ? [employmentType] : []),
+      ...(salary ? [salary] : []),
+      ...(years ? [years] : []),
+    ].slice(0, 12),
+    url: detailUrl,
+    postedAt: null,
+    description: description ?? "",
+  };
 }

@@ -13,7 +13,8 @@ import {
   detectRemoteScope,
   idFromUrl,
 } from "@/lib/adapters/normalize";
-import { parseEasyJobs, parseNextJobzRsc } from "@/lib/adapters/scrape";
+import { parseEasyJobs, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, filterTechUrls } from "@/lib/adapters/scrape";
+import { getDb } from "@/db";
 
 const TIMEOUT_MS = 15_000;
 const UA =
@@ -164,14 +165,13 @@ async function fetchGreenhouse(
 
 /** HTML scrapers + reverse-engineered JSON APIs for BD sources. */
 async function fetchScraped(
-  board: Pick<Board, "name" | "url">,
-): Promise<NormalizedListing[]> {
-  const host = new URL(board.url).host;
+  board: Pick<Board, "id" | "name" | "url">,
+): Promise<NormalizedListing[]> {  const host = new URL(board.url).host;
   let listings: NormalizedListing[];
   if (host.endsWith("easy.jobs")) {
     listings = parseEasyJobs(await fetchText(board.url), board.url);
   } else if (host.endsWith("nextjobz.com.bd")) {
-    listings = await fetchNextJobz(board.url);
+    listings = await fetchNextJobz(board);
   } else if (host === "ignition.airwork.ai") {
     // Airwork public API: skip-based pagination, 50 per page
     listings = [];
@@ -202,29 +202,49 @@ async function fetchScraped(
 }
 
 /**
- * nextjobz.com.bd renders client-side, but its Next.js server returns the
- * full structured job data to `RSC: 1` requests. Pull the first few pages.
+ * nextjobz.com.bd renders client-side, but exposes two usable surfaces:
+ *  1. sitemap-job-details.xml — every job URL (with IJOB code)
+ *  2. each detail page embeds the structured job object in its RSC data
+ * We fetch sitemap → filter tech slugs → skip known codes → pull detail
+ * pages for up to 60 NEW jobs per refresh (full coverage over time).
  */
-async function fetchNextJobz(boardUrl: string): Promise<NormalizedListing[]> {
-  const all: NormalizedListing[] = [];
-  const seen = new Set<string>();
-  for (let page = 1; page <= 5; page++) {
-    const flight = await fetchText(
-      page === 1 ? boardUrl : `${boardUrl}?page=${page}`,
-      { RSC: "1" },
+async function fetchNextJobz(
+  board: Pick<Board, "id" | "name" | "url">,
+): Promise<NormalizedListing[]> {
+  const xml = await fetchText("https://nextjobz.com.bd/sitemap-job-details.xml");
+  const techUrls = filterTechUrls(parseNextJobzSitemap(xml));
+
+  const existing = new Set(
+    (
+      getDb()
+        .prepare("SELECT external_id FROM listings WHERE board_id = ?")
+        .all(board.id) as { external_id: string }[]
+    ).map((r) => r.external_id),
+  );
+
+  const targets = techUrls
+    .filter((u) => {
+      const code = u.match(/IJOB\d+/)?.[0];
+      return !code || !existing.has(code);
+    })
+    .slice(0, 60);
+
+  if (targets.length === 0) return [];
+
+  const listings: NormalizedListing[] = [];
+  for (let i = 0; i < targets.length; i += 10) {
+    const results = await Promise.all(
+      targets.slice(i, i + 10).map(async (u) => {
+        try {
+          return parseNextJobzDetail(await fetchText(u), u);
+        } catch {
+          return null;
+        }
+      }),
     );
-    const pageListings = parseNextJobzRsc(flight, boardUrl);
-    let fresh = 0;
-    for (const l of pageListings) {
-      if (!seen.has(l.externalId)) {
-        seen.add(l.externalId);
-        all.push(l);
-        fresh++;
-      }
-    }
-    if (fresh === 0) break; // ran past the last page
+    for (const l of results) if (l) listings.push(l);
   }
-  return all;
+  return listings;
 }
 
 async function fetchApiListings(board: Pick<Board, "name" | "type" | "url">): Promise<NormalizedListing[]> {
