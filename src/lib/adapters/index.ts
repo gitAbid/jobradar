@@ -1,11 +1,13 @@
 import Parser from "rss-parser";
 import type { Board, NormalizedListing } from "@/lib/types";
 import {
+  normalizeAirwork,
   normalizeArbeitnow,
   normalizeGreenhouse,
   normalizeHimalayas,
   normalizeRemoteOk,
   normalizeRemotive,
+  normalizeTalvette,
   normalizeWorkingNomads,
   detectVisaSponsorship,
   detectRemoteScope,
@@ -160,17 +162,36 @@ async function fetchGreenhouse(
   }));
 }
 
-/** HTML scrapers for BD sources that render server-side. */
+/** HTML scrapers + reverse-engineered JSON APIs for BD sources. */
 async function fetchScraped(
   board: Pick<Board, "name" | "url">,
 ): Promise<NormalizedListing[]> {
   const host = new URL(board.url).host;
-  const html = await fetchText(board.url);
   let listings: NormalizedListing[];
   if (host.endsWith("easy.jobs")) {
-    listings = parseEasyJobs(html, board.url);
+    listings = parseEasyJobs(await fetchText(board.url), board.url);
   } else if (host.endsWith("nextjobz.com.bd")) {
     listings = await fetchNextJobz(board.url);
+  } else if (host === "ignition.airwork.ai") {
+    // Airwork public API: skip-based pagination, 50 per page
+    listings = [];
+    const seen = new Set<string>();
+    for (let skip = 0; skip < 250; skip += 50) {
+      const payload = await fetchJson(
+        `${board.url}${board.url.includes("?") ? "&" : "?"}limit=50&skip=${skip}`,
+      );
+      let fresh = 0;
+      for (const l of normalizeAirwork(payload)) {
+        if (!seen.has(l.externalId)) {
+          seen.add(l.externalId);
+          listings.push(l);
+          fresh++;
+        }
+      }
+      if (fresh === 0) break;
+    }
+  } else if (host.endsWith("sheety.co")) {
+    listings = normalizeTalvette(await fetchJson(board.url));
   } else {
     throw new Error(`no scraper available for ${host}`);
   }

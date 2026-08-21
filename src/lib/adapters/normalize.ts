@@ -62,6 +62,101 @@ export function normalizeWorkingNomads(payload: unknown): NormalizedListing[] {
   }));
 }
 
+// ── Airwork (reverse-engineered public API) ────────────────────────────────
+// GET https://ignition.airwork.ai/api/v2/public/jobs?limit=50&skip=N
+
+interface AirworkJob {
+  _id?: string;
+  title?: string;
+  slug?: string;
+  status?: string;
+  company?: { name?: string };
+  location?: { city?: string; country?: string; isAnywhere?: boolean };
+  jobType?: string;
+  engagementType?: string;
+  skills?: string[];
+  description?: string;
+  publishedDate?: string;
+  createdAt?: string;
+}
+
+export function normalizeAirwork(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { data?: unknown }).data)
+      ? ((payload as { data: AirworkJob[] }).data)
+      : [];
+  return jobs
+    .filter((j) => (j.status ?? "active") === "active")
+    .map((j) => {
+      const anywhere = j.location?.isAnywhere === true;
+      const loc = [j.location?.city, j.location?.country].filter(Boolean).join(", ");
+      return {
+        externalId: String(j._id ?? idFromUrl(j.slug ?? j.title ?? "")),
+        title: String(j.title ?? "").trim(),
+        company: String(j.company?.name ?? "").trim(),
+        location: anywhere ? "Anywhere" : loc || "Bangladesh",
+        isRemote: anywhere,
+        visaSponsorship: detectVisaSponsorship(j.description, j.title),
+        tags: (Array.isArray(j.skills) ? j.skills : []).slice(0, 10),
+        url: j.slug ? `https://app.airwork.ai/opportunities?job=${j.slug}` : "",
+        postedAt: toIsoDate(j.publishedDate ?? j.createdAt),
+        description: stripHtml(String(j.description ?? "")),
+      } satisfies NormalizedListing;
+    });
+}
+
+// ── Talvette (live-jobs spreadsheet API) ───────────────────────────────────
+// GET https://api.sheety.co/.../talvetteLiveJoblist/liveJobs
+
+interface TalvetteJob {
+  id?: number | string;
+  manatalId?: string;
+  title?: string;
+  category?: string;
+  jobType?: string;
+  locationType?: string;
+  officeLocation?: string;
+  employmentStructure?: string;
+  techStack?: string;
+  aboutTheRole?: string;
+  skillsAndQualifications?: string;
+  salaryRange?: string;
+  timestamp?: string;
+}
+
+export function normalizeTalvette(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { liveJobs?: unknown }).liveJobs)
+      ? ((payload as { liveJobs: TalvetteJob[] }).liveJobs)
+      : [];
+  return jobs.map((j) => {
+    const remote = /remote/i.test(String(j.locationType ?? ""));
+    const posted = (() => {
+      if (!j.timestamp) return null;
+      const d = new Date(j.timestamp);
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    })();
+    return {
+      externalId: String(j.manatalId ?? j.id ?? idFromUrl(j.title ?? "")),
+      title: String(j.title ?? "").trim(),
+      company: "Talvette client",
+      location: String(j.officeLocation || j.locationType || "Bangladesh").trim(),
+      isRemote: remote,
+      visaSponsorship: false,
+      tags: [j.category, j.jobType, j.employmentStructure]
+        .filter(Boolean)
+        .map(String)
+        .slice(0, 6),
+      url: "https://talvette.com/forjobseekers",
+      postedAt: posted,
+      description: [j.aboutTheRole, j.skillsAndQualifications, j.techStack]
+        .filter(Boolean)
+        .map(String)
+        .join(" "),
+    } satisfies NormalizedListing;
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const VISA_RE = /(visa\s*sponsor|work\s*permit|relocation\s*(package|support|assistance)|relocat(e|ion)\b)/i;

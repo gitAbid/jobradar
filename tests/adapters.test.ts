@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   detectRemoteScope,
   detectVisaSponsorship,
+  normalizeAirwork,
   normalizeGreenhouse,
+  normalizeTalvette,
   sanitizeTags,
   idFromUrl,
   normalizeArbeitnow,
@@ -157,6 +159,82 @@ describe("normalizeGreenhouse", () => {
     expect(l.visaSponsorship).toBe(true);
     expect(l.description).toContain("Kafka");
     expect(l.description).not.toContain("<b>");
+  });
+});
+
+describe("normalizeAirwork", () => {
+  const payload = {
+    data: [
+      {
+        _id: "abc123",
+        title: "Senior Java Engineer",
+        slug: "senior-java-engineer-jobs-via-airwork-xyz",
+        status: "active",
+        company: { name: "Flexbone" },
+        location: { city: "Dhaka", country: "Bangladesh", isAnywhere: false },
+        jobType: "Full-Time",
+        skills: ["Java", "Spring Boot", "AWS"],
+        description: "<p>Healthcare AI. Visa sponsorship available.</p>",
+        publishedDate: "2026-08-10T07:19:50.312Z",
+      },
+      {
+        _id: "def456",
+        title: "Remote DevOps Engineer",
+        slug: "remote-devops-jobs-via-airwork-zzz",
+        status: "active",
+        company: { name: "Global Co" },
+        location: { isAnywhere: true },
+        jobType: "Contract",
+        skills: ["Kubernetes"],
+        description: "",
+      },
+      { _id: "gone", title: "Closed role", status: "closed" },
+    ],
+  };
+
+  it("maps fields, strips html and detects sponsorship", () => {
+    const listings = normalizeAirwork(payload);
+    expect(listings).toHaveLength(2); // closed roles dropped
+    const java = listings[0];
+    expect(java.externalId).toBe("abc123");
+    expect(java.company).toBe("Flexbone");
+    expect(java.location).toBe("Dhaka, Bangladesh");
+    expect(java.isRemote).toBe(false);
+    expect(java.visaSponsorship).toBe(true);
+    expect(java.tags).toContain("Spring Boot");
+  });
+
+  it("treats isAnywhere as remote-anywhere", () => {
+    const listings = normalizeAirwork(payload);
+    expect(listings[1].location).toBe("Anywhere");
+    expect(listings[1].isRemote).toBe(true);
+    expect(listings[1].url).toContain("opportunities?job=remote-devops");
+  });
+});
+
+describe("normalizeTalvette", () => {
+  it("maps liveJobs spreadsheet rows", () => {
+    const listings = normalizeTalvette({
+      liveJobs: [
+        {
+          id: 1,
+          manatalId: "V63X4538",
+          title: "Mid Level Full Stack Engineer",
+          category: "Technical",
+          jobType: "Contractual",
+          locationType: "Remote",
+          officeLocation: "Dhaka",
+          techStack: "React, Node.js",
+          aboutTheRole: "Join our team.",
+        },
+      ],
+    });
+    expect(listings).toHaveLength(1);
+    const l = listings[0];
+    expect(l.externalId).toBe("V63X4538");
+    expect(l.isRemote).toBe(true);
+    expect(l.tags).toContain("Technical");
+    expect(l.description).toContain("Join our team");
   });
 });
 

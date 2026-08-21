@@ -261,6 +261,18 @@ const SEED_BOARDS: Array<{
     url: "https://nextjobz.com.bd/jobs",
     keywords: [],
   },
+  {
+    name: "Airwork BD",
+    type: "scrape",
+    url: "https://ignition.airwork.ai/api/v2/public/jobs",
+    keywords: [],
+  },
+  {
+    name: "Talvette",
+    type: "scrape",
+    url: "https://api.sheety.co/d6464fb14c638c8070881d5e8789c1fc/talvetteLiveJoblist/liveJobs",
+    keywords: [],
+  },
 
   // ── Company career pages (Greenhouse boards) ────────────────────────────
   // Remote-friendly companies with meaningful Java/Kotlin/Scala footprints.
