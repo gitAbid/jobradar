@@ -1,11 +1,17 @@
 import { getDb, rowToListing } from "@/db";
 import { getGlobalKeywords, isSoundEnabled } from "@/lib/settings";
 import { matchedKeywords, matchesKeywords } from "@/lib/filters";
+import {
+  computeFacet,
+  countryFacetValue,
+  selectedParam,
+  topValues,
+} from "@/lib/facets";
 import type { FilterableListing } from "@/lib/types";
 import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
 import { RefreshButton } from "@/components/RefreshButton";
-import { SkillSidebar } from "@/components/SkillSidebar";
+import { FacetSidebar } from "@/components/FacetSidebar";
 import { Pagination } from "@/components/Pagination";
 import { connection } from "next/server";
 
@@ -14,11 +20,13 @@ const PAGE_SIZE = 20;
 interface SearchParams {
   q?: string;
   status?: string;
-  board?: string;
   remote?: string;
   visa?: string;
   showAll?: string;
   skill?: string | string[];
+  country?: string | string[];
+  company?: string | string[];
+  source?: string | string[];
   page?: string;
 }
 
@@ -43,27 +51,22 @@ export default async function DashboardPage({
 
   let listings = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
 
-  // ── Skill facets (counts over all non-hidden listings) ────────────────
-  const facetCounts = new Map<string, number>();
-  for (const l of listings) {
-    if (l.status === "hidden") continue;
-    for (const s of l.skills) facetCounts.set(s, (facetCounts.get(s) ?? 0) + 1);
-  }
-  const skillFacets = [...facetCounts.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 25);
+  // ── Facets (counts over all non-hidden listings) ───────────────────────
+  const visiblePool = listings.filter((l) => l.status !== "hidden");
+  // skills: a listing contributes each of its skills
+  const skillFacetCounts = new Map<string, number>();
+  for (const l of visiblePool)
+    for (const s of l.skills) skillFacetCounts.set(s, (skillFacetCounts.get(s) ?? 0) + 1);
+  const countryFacetCounts = computeFacet(visiblePool, countryFacetValue);
+  const companyFacetCounts = computeFacet(visiblePool, (l) => l.company || null);
+  const sourceFacetCounts = computeFacet(visiblePool, (l) => l.boardName);
 
   const totalNew = listings.filter((l) => l.status === "new").length;
 
-  // ── Structured filters (SQL would work too; JS keeps highlighting consistent)
+  // ── Structured filters ────────────────────────────────────────────────
   if (sp.status) listings = listings.filter((l) => l.status === sp.status);
   else listings = listings.filter((l) => l.status !== "hidden");
 
-  if (sp.board) {
-    const boardId = Number(sp.board);
-    listings = listings.filter((l) => l.boardId === boardId);
-  }
   if (sp.remote === "1") listings = listings.filter((l) => l.isRemote);
   else if (sp.remote === "anywhere")
     listings = listings.filter((l) => l.isRemote && l.remoteScope === "anywhere");
@@ -71,24 +74,48 @@ export default async function DashboardPage({
     listings = listings.filter((l) => l.isRemote && l.remoteScope === "restricted");
   if (sp.visa === "1") listings = listings.filter((l) => l.visaSponsorship);
 
-  // ── Skill facet filter (OR: any selected skill) ────────────────────────
-  const selectedSkills = sp.skill
-    ? Array.isArray(sp.skill)
-      ? sp.skill
-      : [sp.skill]
-    : [];
-  if (selectedSkills.length > 0) {
+  // ── Facet filters ──────────────────────────────────────────────────────
+  const selectedSkills = selectedParam(sp.skill);
+  if (selectedSkills.length > 0)
+    listings = listings.filter((l) => selectedSkills.some((s) => l.skills.includes(s)));
+
+  const selectedCountries = selectedParam(sp.country);
+  if (selectedCountries.length > 0)
     listings = listings.filter((l) =>
-      selectedSkills.some((s) => l.skills.includes(s)),
+      selectedCountries.includes(countryFacetValue(l)),
     );
-    // keep selected skills visible/checkable in the sidebar even when
-    // they fall outside the top-25 facet cut
-    for (const s of selectedSkills) {
-      if (!skillFacets.some((f) => f.name === s)) {
-        skillFacets.push({ name: s, count: facetCounts.get(s) ?? 0 });
-      }
-    }
-  }
+
+  const selectedCompanies = selectedParam(sp.company);
+  if (selectedCompanies.length > 0)
+    listings = listings.filter((l) => selectedCompanies.includes(l.company));
+
+  const selectedSources = selectedParam(sp.source);
+  if (selectedSources.length > 0)
+    listings = listings.filter((l) => selectedSources.includes(l.boardName));
+
+  // ── Assemble sidebar facets ────────────────────────────────────────────
+  const facets: Array<{ title: string; param: string; values: { name: string; count: number }[] }> = [
+    { title: "Skills", param: "skill", values: topValues(skillFacetCounts, 25) },
+    { title: "Country", param: "country", values: topValues(countryFacetCounts, 20) },
+    { title: "Company", param: "company", values: topValues(companyFacetCounts, 25) },
+    { title: "Source", param: "source", values: topValues(sourceFacetCounts, 25) },
+  ];
+  // keep any selected value visible even when outside the top cut
+  const ensureSelected = (
+    param: string,
+    sel: string[],
+    counts: Map<string, number>,
+  ) => {
+    const section = facets.find((f) => f.param === param);
+    if (!section) return;
+    for (const s of sel)
+      if (!section.values.some((v) => v.name === s))
+        section.values.push({ name: s, count: counts.get(s) ?? 0 });
+  };
+  ensureSelected("skill", selectedSkills, skillFacetCounts);
+  ensureSelected("country", selectedCountries, countryFacetCounts);
+  ensureSelected("company", selectedCompanies, companyFacetCounts);
+  ensureSelected("source", selectedSources, sourceFacetCounts);
 
   // ── Keyword filters ────────────────────────────────────────────────────
   const showAll = sp.showAll === "1";
@@ -133,16 +160,9 @@ export default async function DashboardPage({
   );
   visible = visible.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const boards = (
-    db.prepare("SELECT id, name FROM boards ORDER BY name").all() as {
-      id: number;
-      name: string;
-    }[]
-  ).map((b) => ({ id: b.id, name: b.name }));
-
   return (
     <div className="flex gap-6">
-      <SkillSidebar skills={skillFacets} />
+      <FacetSidebar facets={facets} />
 
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -151,13 +171,14 @@ export default async function DashboardPage({
             <p className="text-sm text-slate-500">
               {totalNew} new · {totalVisible} shown
               {selectedSkills.length > 0 && ` · skills: ${selectedSkills.join(", ")}`}
+              {selectedCountries.length > 0 && ` · countries: ${selectedCountries.join(", ")}`}
               {!showAll && " (matching your keywords — toggle “Show all” to see everything)"}
             </p>
           </div>
           <RefreshButton soundEnabled={isSoundEnabled()} />
         </div>
 
-        <FilterBar boards={boards} />
+        <FilterBar />
 
         {visible.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">

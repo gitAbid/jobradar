@@ -4,11 +4,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { useCallback } from "react";
 
-interface Props {
-  boards: Array<{ id: number; name: string }>;
-}
-
-export function FilterBar({ boards }: Props) {
+export function FilterBar() {
   const router = useRouter();
   const params = useSearchParams();
   const pathname = usePathname();
@@ -26,7 +22,6 @@ export function FilterBar({ boards }: Props) {
 
   const q = params.get("q") ?? "";
   const status = params.get("status") ?? "";
-  const board = params.get("board") ?? "";
   const remote = params.get("remote") ?? "";
   const visa = params.get("visa") ?? "";
   const showAll = params.get("showAll") ?? "";
@@ -60,19 +55,6 @@ export function FilterBar({ boards }: Props) {
         <option value="new">New</option>
         <option value="favorite">Favorite</option>
         <option value="applied">Applied</option>
-      </select>
-
-      <select
-        value={board}
-        onChange={(e) => setParam("board", e.target.value)}
-        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
-      >
-        <option value="">All boards</option>
-        {boards.map((b) => (
-          <option key={b.id} value={String(b.id)}>
-            {b.name}
-          </option>
-        ))}
       </select>
 
       <select
