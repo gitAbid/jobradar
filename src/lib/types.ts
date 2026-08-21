@@ -28,6 +28,8 @@ export interface Listing {
   isRemote: boolean;
   visaSponsorship: boolean;
   tags: string[];
+  /** tech skills detected from title/tags/description via vocabulary */
+  skills: string[];
   url: string;
   postedAt: string | null;
   fetchedAt: string;

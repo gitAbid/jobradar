@@ -66,6 +66,14 @@ function migrate(db: DatabaseSync) {
       value TEXT NOT NULL
     );
   `);
+
+  // lightweight column migrations for pre-existing databases
+  const listingCols = (
+    db.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>
+  ).map((c) => c.name);
+  if (!listingCols.includes("skills")) {
+    db.exec("ALTER TABLE listings ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'");
+  }
 }
 
 // ── Seed boards on first run ───────────────────────────────────────────────
@@ -168,6 +176,7 @@ interface ListingRow {
   is_remote: number;
   visa_sponsorship: number;
   tags: string;
+  skills?: string;
   url: string;
   posted_at: string | null;
   fetched_at: string;
@@ -193,6 +202,7 @@ export function rowToListing(r: ListingRow): Listing & {
     isRemote: r.is_remote === 1,
     visaSponsorship: r.visa_sponsorship === 1,
     tags: safeParse(r.tags),
+    skills: safeParse(r.skills ?? "[]"),
     url: r.url,
     postedAt: r.posted_at,
     fetchedAt: r.fetched_at,

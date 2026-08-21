@@ -69,7 +69,8 @@ export default async function DashboardPage({
         listing.title.toLowerCase().includes(q) ||
         listing.company.toLowerCase().includes(q) ||
         listing.location.toLowerCase().includes(q) ||
-        listing.tags.some((t) => t.toLowerCase().includes(q)),
+        listing.tags.some((t) => t.toLowerCase().includes(q)) ||
+        listing.skills.some((s) => s.toLowerCase().includes(q)),
     );
   }
 

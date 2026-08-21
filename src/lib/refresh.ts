@@ -2,6 +2,7 @@ import { getDb, rowToBoard } from "@/db";
 import { fetchBoardListings } from "@/lib/adapters";
 import { sanitizeTags } from "@/lib/adapters/normalize";
 import { buildSearchText } from "@/lib/filters";
+import { extractSkills } from "@/lib/skills";
 import type { Board, NormalizedListing } from "@/lib/types";
 
 export interface BoardRefreshOutcome {
@@ -78,14 +79,15 @@ function upsertListings(boardId: number, listings: NormalizedListing[]): number 
   const stmt = db.prepare(`
     INSERT INTO listings (
       board_id, external_id, title, company, location,
-      is_remote, visa_sponsorship, tags, url, posted_at,
+      is_remote, visa_sponsorship, tags, skills, url, posted_at,
       fetched_at, status, user_tags, search_text
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '[]', ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '[]', ?)
     ON CONFLICT (board_id, external_id) DO NOTHING
   `);
   let inserted = 0;
   for (const l of listings) {
     if (!l.title || !l.url) continue; // skip malformed entries
+    const skills = extractSkills({ title: l.title, tags: l.tags, description: l.description });
     const res = stmt.run(
       boardId,
       l.externalId,
@@ -95,6 +97,7 @@ function upsertListings(boardId: number, listings: NormalizedListing[]): number 
       l.isRemote ? 1 : 0,
       l.visaSponsorship ? 1 : 0,
       JSON.stringify(l.tags),
+      JSON.stringify(skills),
       l.url,
       l.postedAt,
       new Date().toISOString(),

@@ -3,6 +3,19 @@ import Link from "next/link";
 import { setListingStatusAction } from "@/app/actions";
 import type { FilterableListing } from "@/lib/types";
 
+/** Skill chip → clicking filters the dashboard to that skill. */
+function SkillChip({ skill }: { skill: string }) {
+  return (
+    <Link
+      href={`/?q=${encodeURIComponent(skill)}`}
+      className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-100"
+      title={`Show ${skill} jobs`}
+    >
+      {skill}
+    </Link>
+  );
+}
+
 function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
   if (!text) return null;
   const lower = text.toLowerCase();
@@ -107,13 +120,20 @@ export function ListingCard({
         </div>
       </div>
 
-      {(listing.tags.length > 0 || listing.userTags.length > 0) && (
-        <div className="flex flex-wrap gap-1">
-          {listing.tags.slice(0, 8).map((t) => (
-            <span key={t} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
-              <Highlight text={t} keywords={matched} />
-            </span>
+      {(listing.skills.length > 0 || listing.tags.length > 0 || listing.userTags.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1">
+          {listing.skills.slice(0, 10).map((s) => (
+            <SkillChip key={s} skill={s} />
           ))}
+          {/* raw board tags that aren't already covered by a detected skill */}
+          {listing.tags
+            .filter((t) => !listing.skills.some((s) => s.toLowerCase() === t.toLowerCase()))
+            .slice(0, 6)
+            .map((t) => (
+              <span key={t} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
+                <Highlight text={t} keywords={matched} />
+              </span>
+            ))}
           {listing.userTags.map((t) => (
             <span key={t} className="rounded-md bg-violet-100 px-1.5 py-0.5 text-[11px] text-violet-700">
               #{t}
