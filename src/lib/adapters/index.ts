@@ -1,5 +1,5 @@
 import Parser from "rss-parser";
-import type { Board, NormalizedListing, RemoteScope } from "@/lib/types";
+import type { Board, NormalizedListing } from "@/lib/types";
 import {
   normalizeArbeitnow,
   normalizeGreenhouse,
@@ -11,6 +11,7 @@ import {
   detectRemoteScope,
   idFromUrl,
 } from "@/lib/adapters/normalize";
+import { parseEasyJobs } from "@/lib/adapters/scrape";
 
 const TIMEOUT_MS = 15_000;
 const UA =
@@ -125,7 +126,9 @@ export async function fetchBoardListings(
       ? await fetchRss(board)
       : board.type === "greenhouse"
         ? await fetchGreenhouse(board)
-        : await fetchApiListings(board);
+        : board.type === "scrape"
+          ? await fetchScraped(board)
+          : await fetchApiListings(board);
 
   // Company career boards post hundreds of irrelevant roles — keep only
   // listings matching the board's filter keywords (title or description).
@@ -152,6 +155,24 @@ async function fetchGreenhouse(
 ): Promise<NormalizedListing[]> {
   const payload = await fetchJson(board.url);
   return normalizeGreenhouse(payload).map((l) => ({
+    ...l,
+    company: l.company || board.name.replace(/ \(careers\)$/i, ""),
+  }));
+}
+
+/** HTML scrapers for BD sources that render server-side. */
+async function fetchScraped(
+  board: Pick<Board, "name" | "url">,
+): Promise<NormalizedListing[]> {
+  const host = new URL(board.url).host;
+  const html = await fetchText(board.url);
+  let listings: NormalizedListing[];
+  if (host.endsWith("easy.jobs")) {
+    listings = parseEasyJobs(html, board.url);
+  } else {
+    throw new Error(`no scraper available for ${host}`);
+  }
+  return listings.map((l) => ({
     ...l,
     company: l.company || board.name.replace(/ \(careers\)$/i, ""),
   }));

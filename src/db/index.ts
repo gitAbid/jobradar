@@ -248,6 +248,14 @@ const SEED_BOARDS: Array<{
     enabled: false, // currently returns 403 to server-side fetchers; enable to retry
   },
 
+  // ── Bangladesh sources (server-rendered HTML scrapers) ─────────────────
+  {
+    name: "Brain Station 23 (careers)",
+    type: "scrape",
+    url: "https://brainstation-23.easy.jobs/",
+    keywords: [],
+  },
+
   // ── Company career pages (Greenhouse boards) ────────────────────────────
   // Remote-friendly companies with meaningful Java/Kotlin/Scala footprints.
   // filter_keywords pre-filter each company's full job board down to
