@@ -5,6 +5,7 @@ import type { FilterableListing } from "@/lib/types";
 import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
 import { RefreshButton } from "@/components/RefreshButton";
+import { SkillSidebar } from "@/components/SkillSidebar";
 import { connection } from "next/server";
 
 interface SearchParams {
@@ -14,6 +15,7 @@ interface SearchParams {
   remote?: string;
   visa?: string;
   showAll?: string;
+  skill?: string | string[];
 }
 
 export default async function DashboardPage({
@@ -37,6 +39,17 @@ export default async function DashboardPage({
 
   let listings = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
 
+  // ── Skill facets (counts over all non-hidden listings) ────────────────
+  const facetCounts = new Map<string, number>();
+  for (const l of listings) {
+    if (l.status === "hidden") continue;
+    for (const s of l.skills) facetCounts.set(s, (facetCounts.get(s) ?? 0) + 1);
+  }
+  const skillFacets = [...facetCounts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 25);
+
   const totalNew = listings.filter((l) => l.status === "new").length;
 
   // ── Structured filters (SQL would work too; JS keeps highlighting consistent)
@@ -49,6 +62,25 @@ export default async function DashboardPage({
   }
   if (sp.remote === "1") listings = listings.filter((l) => l.isRemote);
   if (sp.visa === "1") listings = listings.filter((l) => l.visaSponsorship);
+
+  // ── Skill facet filter (OR: any selected skill) ────────────────────────
+  const selectedSkills = sp.skill
+    ? Array.isArray(sp.skill)
+      ? sp.skill
+      : [sp.skill]
+    : [];
+  if (selectedSkills.length > 0) {
+    listings = listings.filter((l) =>
+      selectedSkills.some((s) => l.skills.includes(s)),
+    );
+    // keep selected skills visible/checkable in the sidebar even when
+    // they fall outside the top-25 facet cut
+    for (const s of selectedSkills) {
+      if (!skillFacets.some((f) => f.name === s)) {
+        skillFacets.push({ name: s, count: facetCounts.get(s) ?? 0 });
+      }
+    }
+  }
 
   // ── Keyword filters ────────────────────────────────────────────────────
   const showAll = sp.showAll === "1";
@@ -82,32 +114,37 @@ export default async function DashboardPage({
   ).map((b) => ({ id: b.id, name: b.name }));
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold">Dashboard</h1>
-          <p className="text-sm text-slate-500">
-            {totalNew} new · {visible.length} shown
-            {!showAll && " (matching your keywords — toggle “Show all” to see everything)"}
-          </p>
+    <div className="flex gap-6">
+      <SkillSidebar skills={skillFacets} />
+
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold">Dashboard</h1>
+            <p className="text-sm text-slate-500">
+              {totalNew} new · {visible.length} shown
+              {selectedSkills.length > 0 && ` · skills: ${selectedSkills.join(", ")}`}
+              {!showAll && " (matching your keywords — toggle “Show all” to see everything)"}
+            </p>
+          </div>
+          <RefreshButton soundEnabled={isSoundEnabled()} />
         </div>
-        <RefreshButton soundEnabled={isSoundEnabled()} />
+
+        <FilterBar boards={boards} />
+
+        {visible.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+            No listings yet. Hit <strong>Refresh now</strong> to pull from your boards,
+            or add more boards on the <a href="/boards" className="underline">Boards</a> page.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {visible.map(({ listing, matched }) => (
+              <ListingCard key={listing.id} listing={listing} matched={matched} />
+            ))}
+          </div>
+        )}
       </div>
-
-      <FilterBar boards={boards} />
-
-      {visible.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          No listings yet. Hit <strong>Refresh now</strong> to pull from your boards,
-          or add more boards on the <a href="/boards" className="underline">Boards</a> page.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {visible.map(({ listing, matched }) => (
-            <ListingCard key={listing.id} listing={listing} matched={matched} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
