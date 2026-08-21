@@ -255,6 +255,12 @@ const SEED_BOARDS: Array<{
     url: "https://brainstation-23.easy.jobs/",
     keywords: [],
   },
+  {
+    name: "Nextjobz BD",
+    type: "scrape",
+    url: "https://nextjobz.com.bd/jobs",
+    keywords: [],
+  },
 
   // ── Company career pages (Greenhouse boards) ────────────────────────────
   // Remote-friendly companies with meaningful Java/Kotlin/Scala footprints.

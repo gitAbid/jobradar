@@ -11,7 +11,7 @@ import {
   detectRemoteScope,
   idFromUrl,
 } from "@/lib/adapters/normalize";
-import { parseEasyJobs } from "@/lib/adapters/scrape";
+import { parseEasyJobs, parseNextJobzRsc } from "@/lib/adapters/scrape";
 
 const TIMEOUT_MS = 15_000;
 const UA =
@@ -23,12 +23,12 @@ async function fetchJson(url: string): Promise<unknown> {
   return JSON.parse(text);
 }
 
-async function fetchText(url: string): Promise<string> {
+async function fetchText(url: string, headers: Record<string, string> = {}): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(url, {
-        headers: { "User-Agent": UA, Accept: "application/json, text/xml, */*" },
+        headers: { "User-Agent": UA, Accept: "application/json, text/xml, */*", ...headers },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -169,6 +169,8 @@ async function fetchScraped(
   let listings: NormalizedListing[];
   if (host.endsWith("easy.jobs")) {
     listings = parseEasyJobs(html, board.url);
+  } else if (host.endsWith("nextjobz.com.bd")) {
+    listings = await fetchNextJobz(board.url);
   } else {
     throw new Error(`no scraper available for ${host}`);
   }
@@ -176,6 +178,32 @@ async function fetchScraped(
     ...l,
     company: l.company || board.name.replace(/ \(careers\)$/i, ""),
   }));
+}
+
+/**
+ * nextjobz.com.bd renders client-side, but its Next.js server returns the
+ * full structured job data to `RSC: 1` requests. Pull the first few pages.
+ */
+async function fetchNextJobz(boardUrl: string): Promise<NormalizedListing[]> {
+  const all: NormalizedListing[] = [];
+  const seen = new Set<string>();
+  for (let page = 1; page <= 5; page++) {
+    const flight = await fetchText(
+      page === 1 ? boardUrl : `${boardUrl}?page=${page}`,
+      { RSC: "1" },
+    );
+    const pageListings = parseNextJobzRsc(flight, boardUrl);
+    let fresh = 0;
+    for (const l of pageListings) {
+      if (!seen.has(l.externalId)) {
+        seen.add(l.externalId);
+        all.push(l);
+        fresh++;
+      }
+    }
+    if (fresh === 0) break; // ran past the last page
+  }
+  return all;
 }
 
 async function fetchApiListings(board: Pick<Board, "name" | "type" | "url">): Promise<NormalizedListing[]> {

@@ -70,3 +70,66 @@ export function parseEasyJobs(html: string, baseUrl: string): NormalizedListing[
 
 // keep idFromUrl referenced for future scrapers
 void idFromUrl;
+
+// ── nextjobz.com.bd (RSC flight payload) ───────────────────────────────────
+// The site is a Next.js App Router SPA, but requesting /jobs with the `RSC: 1`
+// header returns the server flight payload containing fully structured job
+// objects — no headless browser needed.
+
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/&/g, " ")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function unescapeJsonString(s: string): string {
+  return s.replace(/\\"/g, '"').replace(/\\\\/g, "\\").replace(/\\\//g, "/");
+}
+
+const NEXTJOBZ_ITEM_RE =
+  /"jobMasterId":(\d+),"jobTitle":"((?:[^"\\]|\\.)*)","jobCode":"([^"]+)","companyName":"((?:[^"\\]|\\.)*)","jobLocation":"((?:[^"\\]|\\.)*)","workType":"([^"]*)","employmentType":"([^"]*)"(?:,"jobSkills":"(\[[^\]]*\])")?(?:,"fromDate":"([^"]*)")?/g;
+
+export function parseNextJobzRsc(flight: string, baseUrl: string): NormalizedListing[] {
+  const origin = new URL(baseUrl).origin;
+  const seen = new Map<string, NormalizedListing>();
+  let m: RegExpExecArray | null;
+  while ((m = NEXTJOBZ_ITEM_RE.exec(flight)) !== null) {
+    const [, , rawTitle, jobCode, rawCompany, rawLoc, workType, empType, skillsJson, fromDate] = m;
+    const title = unescapeJsonString(rawTitle).trim();
+    if (!title || seen.has(jobCode)) continue;
+    const company = unescapeJsonString(rawCompany).trim();
+    const loc = unescapeJsonString(rawLoc).trim();
+    const skills = skillsJson
+      ? (() => {
+          try {
+            // flight payload escapes quotes: "[\"Skill\"]" → strip backslashes
+            const v = JSON.parse(skillsJson.replace(/\\(.)/g, "$1"));
+            return Array.isArray(v) ? v.map(String).slice(0, 12) : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+    const slugParts = [slugify(title), loc ? slugify(loc) : "", jobCode].filter(Boolean);
+    seen.set(jobCode, {
+      externalId: jobCode,
+      title,
+      company,
+      location: loc ? `${loc}, Bangladesh` : "Bangladesh",
+      isRemote: /remote/i.test(`${workType} ${empType} ${title}`),
+      visaSponsorship: false,
+      tags: [...skills, ...(workType ? [workType] : []), ...(empType ? [empType] : [])],
+      url: `${origin}/jobs/${slugParts.join("-")}`,
+      postedAt: fromDate ?? null,
+      description: "",
+    });
+  }
+  if (seen.size === 0) {
+    throw new Error("no jobs found in nextjobz payload — structure may have changed");
+  }
+  return [...seen.values()];
+}
