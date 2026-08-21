@@ -96,9 +96,14 @@ export function ListingCard({
               <Highlight text={listing.title} keywords={matched} />
               <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
             </a>
-            {listing.isRemote && (
+            {listing.isRemote && listing.remoteScope === "anywhere" && (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-800">
-                <Globe className="h-3.5 w-3.5" /> Remote
+                <Globe className="h-3.5 w-3.5" /> Remote · Anywhere
+              </span>
+            )}
+            {listing.isRemote && listing.remoteScope === "restricted" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-800">
+                <MapPin className="h-3.5 w-3.5" /> Remote · Select countries
               </span>
             )}
             {listing.visaSponsorship && (

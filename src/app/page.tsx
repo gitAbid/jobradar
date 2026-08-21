@@ -61,6 +61,10 @@ export default async function DashboardPage({
     listings = listings.filter((l) => l.boardId === boardId);
   }
   if (sp.remote === "1") listings = listings.filter((l) => l.isRemote);
+  else if (sp.remote === "anywhere")
+    listings = listings.filter((l) => l.isRemote && l.remoteScope === "anywhere");
+  else if (sp.remote === "restricted")
+    listings = listings.filter((l) => l.isRemote && l.remoteScope === "restricted");
   if (sp.visa === "1") listings = listings.filter((l) => l.visaSponsorship);
 
   // ── Skill facet filter (OR: any selected skill) ────────────────────────

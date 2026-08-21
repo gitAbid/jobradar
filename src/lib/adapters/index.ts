@@ -1,11 +1,12 @@
 import Parser from "rss-parser";
-import type { Board, NormalizedListing } from "@/lib/types";
+import type { Board, NormalizedListing, RemoteScope } from "@/lib/types";
 import {
   normalizeArbeitnow,
   normalizeHimalayas,
   normalizeRemoteOk,
   normalizeRemotive,
   detectVisaSponsorship,
+  detectRemoteScope,
   idFromUrl,
 } from "@/lib/adapters/normalize";
 
@@ -105,8 +106,19 @@ function pickNormalizer(boardName: string): Normalizer | null {
 export async function fetchBoardListings(
   board: Pick<Board, "id" | "name" | "type" | "url">,
 ): Promise<NormalizedListing[]> {
-  if (board.type === "rss") return fetchRss(board);
+  const listings = board.type === "rss" ? await fetchRss(board) : await fetchApiListings(board);
+  // classify remote scope centrally once fields are normalized
+  return listings.map((l) => ({
+    ...l,
+    remoteScope: detectRemoteScope({
+      isRemote: l.isRemote,
+      location: l.location,
+      description: l.description,
+    }),
+  }));
+}
 
+async function fetchApiListings(board: Pick<Board, "name" | "type" | "url">): Promise<NormalizedListing[]> {
   const normalizer = pickNormalizer(board.name);
   if (!normalizer) {
     // Unknown API board — best effort: expect a JSON array of job objects.

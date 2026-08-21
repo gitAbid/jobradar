@@ -72,14 +72,17 @@ export function FilterBar({ boards }: Props) {
         ))}
       </select>
 
-      <label className="flex cursor-pointer items-center gap-1.5 text-sm">
-        <input
-          type="checkbox"
-          checked={remote === "1"}
-          onChange={(e) => setParam("remote", e.target.checked ? "1" : "")}
-        />
-        Remote
-      </label>
+      <select
+        value={remote}
+        onChange={(e) => setParam("remote", e.target.value)}
+        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+        title="Work location"
+      >
+        <option value="">Any location</option>
+        <option value="1">All remote</option>
+        <option value="anywhere">🌍 Remote · anywhere</option>
+        <option value="restricted">📍 Remote · select countries</option>
+      </select>
 
       <label className="flex cursor-pointer items-center gap-1.5 text-sm">
         <input

@@ -79,9 +79,9 @@ function upsertListings(boardId: number, listings: NormalizedListing[]): number 
   const stmt = db.prepare(`
     INSERT INTO listings (
       board_id, external_id, title, company, location,
-      is_remote, visa_sponsorship, tags, skills, url, posted_at,
+      is_remote, visa_sponsorship, remote_scope, tags, skills, url, posted_at,
       fetched_at, status, user_tags, search_text
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '[]', ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '[]', ?)
     ON CONFLICT (board_id, external_id) DO NOTHING
   `);
   let inserted = 0;
@@ -96,6 +96,7 @@ function upsertListings(boardId: number, listings: NormalizedListing[]): number 
       l.location,
       l.isRemote ? 1 : 0,
       l.visaSponsorship ? 1 : 0,
+      l.remoteScope ?? null,
       JSON.stringify(l.tags),
       JSON.stringify(skills),
       l.url,

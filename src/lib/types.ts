@@ -17,6 +17,9 @@ export interface Board {
 
 export type ListingStatus = "new" | "favorite" | "applied" | "hidden";
 
+/** Where a remote job may be performed from. null = not remote. */
+export type RemoteScope = "anywhere" | "restricted" | null;
+
 export interface Listing {
   id: number;
   boardId: number;
@@ -27,6 +30,7 @@ export interface Listing {
   location: string;
   isRemote: boolean;
   visaSponsorship: boolean;
+  remoteScope: RemoteScope;
   tags: string[];
   /** tech skills detected from title/tags/description via vocabulary */
   skills: string[];
@@ -52,6 +56,7 @@ export interface NormalizedListing {
   location: string;
   isRemote: boolean;
   visaSponsorship: boolean;
+  remoteScope?: RemoteScope | null;
   tags: string[];
   url: string;
   postedAt: string | null;

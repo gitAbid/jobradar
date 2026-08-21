@@ -74,6 +74,9 @@ function migrate(db: DatabaseSync) {
   if (!listingCols.includes("skills")) {
     db.exec("ALTER TABLE listings ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'");
   }
+  if (!listingCols.includes("remote_scope")) {
+    db.exec("ALTER TABLE listings ADD COLUMN remote_scope TEXT");
+  }
 }
 
 // ── Seed boards on first run ───────────────────────────────────────────────
@@ -177,6 +180,7 @@ interface ListingRow {
   visa_sponsorship: number;
   tags: string;
   skills?: string;
+  remote_scope?: string | null;
   url: string;
   posted_at: string | null;
   fetched_at: string;
@@ -201,6 +205,7 @@ export function rowToListing(r: ListingRow): Listing & {
     location: r.location,
     isRemote: r.is_remote === 1,
     visaSponsorship: r.visa_sponsorship === 1,
+    remoteScope: (r.remote_scope as "anywhere" | "restricted" | null) ?? null,
     tags: safeParse(r.tags),
     skills: safeParse(r.skills ?? "[]"),
     url: r.url,

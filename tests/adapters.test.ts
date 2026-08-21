@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  detectRemoteScope,
   detectVisaSponsorship,
   sanitizeTags,
   idFromUrl,
@@ -130,6 +131,29 @@ describe("sanitizeTags", () => {
     const cleaned = sanitizeTags(batch);
     expect(cleaned[0].tags).toEqual(["java"]); // skill tag kept
     expect(cleaned[1].tags).toEqual([]); // "senior" is a stopword tag
+  });
+});
+
+describe("detectRemoteScope", () => {
+  it("returns null for non-remote listings", () => {
+    expect(detectRemoteScope({ isRemote: false, location: "Berlin" })).toBeNull();
+  });
+
+  it("detects worldwide signals", () => {
+    expect(detectRemoteScope({ isRemote: true, location: "Anywhere" })).toBe("anywhere");
+    expect(detectRemoteScope({ isRemote: true, location: "Remote", description: "hire worldwide" })).toBe("anywhere");
+  });
+
+  it("detects region-restricted locations", () => {
+    expect(detectRemoteScope({ isRemote: true, location: "USA Only" })).toBe("restricted");
+    expect(detectRemoteScope({ isRemote: true, location: "Europe" })).toBe("restricted");
+    expect(
+      detectRemoteScope({ isRemote: true, location: "Remote", description: "must be located in Canada" }),
+    ).toBe("restricted");
+  });
+
+  it("defaults remote with no signal to anywhere", () => {
+    expect(detectRemoteScope({ isRemote: true, location: "" })).toBe("anywhere");
   });
 });
 

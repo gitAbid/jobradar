@@ -8,6 +8,53 @@ export function detectVisaSponsorship(...texts: Array<string | undefined>): bool
   return VISA_RE.test(texts.filter((t): t is string => Boolean(t)).join(" "));
 }
 
+// ── Remote scope detection ─────────────────────────────────────────────────
+
+export type RemoteScope = "anywhere" | "restricted";
+
+const ANYWHERE_RE =
+  /\b(anywhere|world ?wide|globally|from anywhere|no location (?:restriction|requirement)|remote[- ]first)\b/i;
+
+/** Regions/countries that commonly appear in "this job is limited to X" phrases. */
+const REGION_RE =
+  /\b(usa?|u\.s\.a?|united states|canada|canadian|uk|united kingdom|britain|europe|european union|eu|emea|apac|latam|americas|benelux|dach|germany|netherlands|poland|spain|france|portugal|italy|romania|ukraine|india|philippines|vietnam|singapore|japan|australia|new zealand|brazil|mexico|argentina|colombia|middle east|uae|africa|asia|north america|south america|bd|bangladesh)\b/i;
+
+const EXPLICIT_RESTRICT_RE =
+  /\b(only|residents?|citizens?|located (?:in)?|based (?:in)?|living (?:in)?|residing (?:in)?|eligible to work|within)\b[^.!?]{0,60}"?/i;
+
+/**
+ * Classify a listing's remote scope:
+ *  - "anywhere":   remote, no geographic signal (treated as worldwide)
+ *  - "restricted": remote but tied to specific countries/regions
+ *  - null:         not remote
+ */
+export function detectRemoteScope(input: {
+  isRemote: boolean;
+  location?: string;
+  description?: string;
+}): RemoteScope | null {
+  if (!input.isRemote) return null;
+
+  const loc = input.location ?? "";
+  const desc = input.description ?? "";
+
+  if (ANYWHERE_RE.test(loc)) return "anywhere";
+  if (REGION_RE.test(loc)) {
+    // "Anywhere in Europe" style overrides a bare region mention
+    return ANYWHERE_RE.test(desc) && !EXPLICIT_RESTRICT_RE.test(desc)
+      ? "anywhere"
+      : "restricted";
+  }
+  // explicit restriction phrasing in the body ("US residents only", "must be located in the EU")
+  if (
+    REGION_RE.test(desc) &&
+    EXPLICIT_RESTRICT_RE.test(desc.slice(Math.max(0, desc.search(REGION_RE) - 60), desc.search(REGION_RE) + 120))
+  ) {
+    return "restricted";
+  }
+  return "anywhere"; // remote with no geographic signal → assume worldwide
+}
+
 /**
  * Tag sanitation, two passes:
  * 1. Drop known non-skill category/level words ("senior", "dev", "sales",
