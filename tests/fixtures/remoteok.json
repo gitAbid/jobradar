@@ -1,0 +1,17 @@
+[
+  {
+    "legal": "remoteok legal notice placeholder",
+    "id": 0
+  },
+  {
+    "slug": "senior-java-engineer-acme",
+    "id": 12345,
+    "position": "Senior Java Engineer",
+    "company": "Acme",
+    "location": "Remote",
+    "tags": ["java", "spring boot", "kafka"],
+    "description": "<p>Build microservices with <b>Spring Boot</b>.</p>",
+    "date": "2026-08-10T00:00:00.000Z",
+    "url": "https://remoteok.com/remote-jobs/12345"
+  }
+]

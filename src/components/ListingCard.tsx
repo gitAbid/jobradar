@@ -1,0 +1,156 @@
+import { Heart, Send, Eye, ExternalLink, MapPin, Building2, Globe, Plane } from "lucide-react";
+import Link from "next/link";
+import { setListingStatusAction } from "@/app/actions";
+import type { FilterableListing } from "@/lib/types";
+
+function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  const hits = keywords.filter((k) => lower.includes(k));
+  if (hits.length === 0) return <>{text}</>;
+  // split on any keyword occurrence
+  const re = new RegExp(
+    `(${hits.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
+    "gi",
+  );
+  return (
+    <>
+      {text.split(re).map((part, i) =>
+        hits.includes(part.toLowerCase()) ? (
+          <mark key={i} className="rounded bg-amber-200 px-0.5">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function StatusButton({
+  id,
+  status,
+  active,
+  children,
+  title,
+}: {
+  id: number;
+  status: string;
+  active: boolean;
+  children: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <form action={setListingStatusAction}>
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="status" value={status} />
+      <button
+        type="submit"
+        title={title}
+        className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs transition ${
+          active
+            ? "border-slate-900 bg-slate-900 text-white"
+            : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
+        }`}
+      >
+        {children}
+      </button>
+    </form>
+  );
+}
+
+export function ListingCard({
+  listing,
+  matched,
+}: {
+  listing: FilterableListing;
+  matched: string[];
+}) {
+  const posted = listing.postedAt ? timeAgo(listing.postedAt) : null;
+
+  return (
+    <article className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <a
+            href={listing.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-semibold text-slate-900 hover:underline"
+          >
+            <Highlight text={listing.title} keywords={matched} />
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          </a>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1">
+              <Building2 className="h-3 w-3" />
+              {listing.company || "—"}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <MapPin className="h-3 w-3" />
+              {listing.location || "—"}
+            </span>
+            {listing.isRemote && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
+                <Globe className="h-3 w-3" /> remote
+              </span>
+            )}
+            {listing.visaSponsorship && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-sky-700">
+                <Plane className="h-3 w-3" /> visa/relocation
+              </span>
+            )}
+            <span className="rounded-full bg-slate-100 px-1.5 py-0.5">{listing.boardName}</span>
+            {posted && <span title={listing.postedAt ?? ""}>{posted}</span>}
+          </div>
+        </div>
+      </div>
+
+      {(listing.tags.length > 0 || listing.userTags.length > 0) && (
+        <div className="flex flex-wrap gap-1">
+          {listing.tags.slice(0, 8).map((t) => (
+            <span key={t} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
+              <Highlight text={t} keywords={matched} />
+            </span>
+          ))}
+          {listing.userTags.map((t) => (
+            <span key={t} className="rounded-md bg-violet-100 px-1.5 py-0.5 text-[11px] text-violet-700">
+              #{t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-auto flex items-center gap-1.5 pt-1">
+        <StatusButton id={listing.id} status="favorite" active={listing.status === "favorite"} title="Favorite">
+          <Heart className="h-3.5 w-3.5" /> Favorite
+        </StatusButton>
+        <StatusButton id={listing.id} status="applied" active={listing.status === "applied"} title="Mark applied">
+          <Send className="h-3.5 w-3.5" /> Applied
+        </StatusButton>
+        <StatusButton id={listing.id} status="hidden" active={false} title="Hide this listing">
+          <Eye className="h-3.5 w-3.5" /> Hide
+        </StatusButton>
+        {listing.status === "favorite" || listing.status === "applied" ? (
+          <Link
+            href="/applied"
+            className="ml-auto text-xs text-slate-400 hover:text-slate-600"
+          >
+            manage →
+          </Link>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diff / 86_400_000);
+  if (days > 30) return `${Math.floor(days / 30)}mo ago`;
+  if (days >= 1) return `${days}d ago`;
+  const hours = Math.floor(diff / 3_600_000);
+  if (hours >= 1) return `${hours}h ago`;
+  return "just now";
+}
