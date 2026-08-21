@@ -1,6 +1,6 @@
 // ── Shared domain types ────────────────────────────────────────────────────
 
-export type BoardType = "api" | "rss";
+export type BoardType = "api" | "rss" | "greenhouse";
 
 export interface Board {
   id: number;

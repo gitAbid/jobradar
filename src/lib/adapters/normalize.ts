@@ -1,5 +1,67 @@
 import type { NormalizedListing } from "@/lib/types";
 
+// ── Greenhouse company boards ──────────────────────────────────────────────
+// GET https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true
+// → { jobs: [...] }
+
+interface GreenhouseJob {
+  id?: number | string;
+  title?: string;
+  updated_at?: string;
+  absolute_url?: string;
+  location?: { name?: string };
+  content?: string;
+}
+
+export function normalizeGreenhouse(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { jobs?: unknown }).jobs)
+      ? ((payload as { jobs: GreenhouseJob[] }).jobs)
+      : [];
+  return jobs.map((j) => ({
+    externalId: String(j.id ?? idFromUrl(j.absolute_url ?? j.title ?? "")),
+    title: String(j.title ?? "").trim(),
+    company: "", // filled from board name by the fetch layer
+    location: String(j.location?.name ?? "").trim(),
+    isRemote: /remote/i.test(`${j.location?.name ?? ""} ${j.title ?? ""}`),
+    visaSponsorship: detectVisaSponsorship(j.content, j.title),
+    tags: [],
+    url: String(j.absolute_url ?? ""),
+    postedAt: toIsoDate(j.updated_at),
+    description: stripHtml(String(j.content ?? "")),
+  }));
+}
+
+// ── Working Nomads ─────────────────────────────────────────────────────────
+// GET https://www.workingnomads.com/api/exposed_jobs/ → [ ... ]
+
+interface WorkingNomadsJob {
+  url?: string;
+  title?: string;
+  description?: string;
+  company_name?: string;
+  category_name?: string;
+  tags?: string;
+  location?: string;
+  pub_date?: string;
+}
+
+export function normalizeWorkingNomads(payload: unknown): NormalizedListing[] {
+  if (!Array.isArray(payload)) return [];
+  return (payload as WorkingNomadsJob[]).map((j) => ({
+    externalId: idFromUrl(j.url ?? j.title ?? ""),
+    title: String(j.title ?? "").trim(),
+    company: String(j.company_name ?? "").trim(),
+    location: String(j.location ?? "Remote").trim() || "Remote",
+    isRemote: true,
+    visaSponsorship: detectVisaSponsorship(j.description, j.title),
+    tags: typeof j.tags === "string" && j.tags.length ? j.tags.split(",").map((t) => t.trim()) : [],
+    url: String(j.url ?? ""),
+    postedAt: toIsoDate(j.pub_date),
+    description: stripHtml(String(j.description ?? "")),
+  }));
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const VISA_RE = /(visa\s*sponsor|work\s*permit|relocation\s*(package|support|assistance)|relocat(e|ion)\b)/i;

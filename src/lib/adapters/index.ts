@@ -2,9 +2,11 @@ import Parser from "rss-parser";
 import type { Board, NormalizedListing, RemoteScope } from "@/lib/types";
 import {
   normalizeArbeitnow,
+  normalizeGreenhouse,
   normalizeHimalayas,
   normalizeRemoteOk,
   normalizeRemotive,
+  normalizeWorkingNomads,
   detectVisaSponsorship,
   detectRemoteScope,
   idFromUrl,
@@ -97,16 +99,42 @@ const API_NORMALIZERS: Record<string, Normalizer> = {
   remotive: normalizeRemotive,
   arbeitnow: normalizeArbeitnow,
   himalayasapp: normalizeHimalayas,
+  workingnomads: normalizeWorkingNomads,
 };
 
 function pickNormalizer(boardName: string): Normalizer | null {
   return API_NORMALIZERS[boardName.toLowerCase().replace(/[^a-z]/g, "")] ?? null;
 }
 
+/** Word-boundary keyword test used to pre-filter company career boards. */
+function matchesAnyKeyword(haystack: string, keywords: string[]): boolean {
+  return keywords.some((k) => {
+    const esc = k.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!esc) return false;
+    const pre = /^\w/.test(esc) ? "\\b" : "";
+    const post = /\w$/.test(esc) ? "\\b" : "";
+    return new RegExp(`${pre}${esc}${post}`, "i").test(haystack);
+  });
+}
+
 export async function fetchBoardListings(
-  board: Pick<Board, "id" | "name" | "type" | "url">,
+  board: Pick<Board, "id" | "name" | "type" | "url" | "filterKeywords">,
 ): Promise<NormalizedListing[]> {
-  const listings = board.type === "rss" ? await fetchRss(board) : await fetchApiListings(board);
+  let listings =
+    board.type === "rss"
+      ? await fetchRss(board)
+      : board.type === "greenhouse"
+        ? await fetchGreenhouse(board)
+        : await fetchApiListings(board);
+
+  // Company career boards post hundreds of irrelevant roles — keep only
+  // listings matching the board's filter keywords (title or description).
+  if (board.type === "greenhouse" && board.filterKeywords.length > 0) {
+    listings = listings.filter(
+      (l) => matchesAnyKeyword(`${l.title} ${l.description}`, board.filterKeywords),
+    );
+  }
+
   // classify remote scope centrally once fields are normalized
   return listings.map((l) => ({
     ...l,
@@ -115,6 +143,17 @@ export async function fetchBoardListings(
       location: l.location,
       description: l.description,
     }),
+  }));
+}
+
+/** Greenhouse company board: the board IS the company. */
+async function fetchGreenhouse(
+  board: Pick<Board, "name" | "url">,
+): Promise<NormalizedListing[]> {
+  const payload = await fetchJson(board.url);
+  return normalizeGreenhouse(payload).map((l) => ({
+    ...l,
+    company: l.company || board.name.replace(/ \(careers\)$/i, ""),
   }));
 }
 

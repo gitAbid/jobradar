@@ -110,6 +110,15 @@ export default async function DashboardPage({
     );
   }
 
+  // company boards post the same role once per location — show one card each
+  const seenKeys = new Set<string>();
+  visible = visible.filter(({ listing }) => {
+    const key = `${listing.company}|${listing.title}`.toLowerCase();
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    return true;
+  });
+
   const boards = (
     db.prepare("SELECT id, name FROM boards ORDER BY name").all() as {
       id: number;

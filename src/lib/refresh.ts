@@ -35,10 +35,9 @@ export async function refreshAll(boardId?: number): Promise<RefreshSummary> {
       .all(boardId ?? null, boardId ?? null) as Record<string, unknown>[]
   ).map((r) => rowToBoard(r as never));
 
-  const results: BoardRefreshOutcome[] = [];
-  for (const board of boards) {
-    results.push(await refreshBoard(board));
-  }
+  // fetch boards concurrently; node:sqlite writes are synchronous and thus
+  // serialized by the event loop, so this is safe
+  const results = await Promise.all(boards.map((board) => refreshBoard(board)));
 
   expireOldListings();
 
@@ -50,7 +49,7 @@ export async function refreshAll(boardId?: number): Promise<RefreshSummary> {
 }
 
 export async function refreshBoard(
-  board: Pick<Board, "id" | "name" | "type" | "url">,
+  board: Pick<Board, "id" | "name" | "type" | "url" | "filterKeywords">,
 ): Promise<BoardRefreshOutcome> {
   const db = getDb();
   try {

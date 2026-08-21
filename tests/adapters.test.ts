@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectRemoteScope,
   detectVisaSponsorship,
+  normalizeGreenhouse,
   sanitizeTags,
   idFromUrl,
   normalizeArbeitnow,
@@ -131,6 +132,31 @@ describe("sanitizeTags", () => {
     const cleaned = sanitizeTags(batch);
     expect(cleaned[0].tags).toEqual(["java"]); // skill tag kept
     expect(cleaned[1].tags).toEqual([]); // "senior" is a stopword tag
+  });
+});
+
+describe("normalizeGreenhouse", () => {
+  it("maps jobs, strips html content and fills company later", () => {
+    const listings = normalizeGreenhouse({
+      jobs: [
+        {
+          id: 777,
+          title: "Senior Java Engineer (Remote EU)",
+          updated_at: "2026-08-18T10:00:00+02:00",
+          absolute_url: "https://jobs.company.com/jobs/777",
+          location: { name: "Remote, Europe" },
+          content: "<p>Our <b>platform</b> team uses Kafka. Visa sponsorship offered.</p>",
+        },
+      ],
+    });
+    expect(listings).toHaveLength(1);
+    const l = listings[0];
+    expect(l.externalId).toBe("777");
+    expect(l.title).toBe("Senior Java Engineer (Remote EU)");
+    expect(l.isRemote).toBe(true);
+    expect(l.visaSponsorship).toBe(true);
+    expect(l.description).toContain("Kafka");
+    expect(l.description).not.toContain("<b>");
   });
 });
 
