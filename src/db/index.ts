@@ -258,7 +258,7 @@ const SEED_BOARDS: Array<{
   {
     name: "Nextjobz BD",
     type: "scrape",
-    url: "https://nextjobz.com.bd/jobs",
+    url: "https://nextjobz.com.bd/it-jobs",
     keywords: [],
   },
   {
