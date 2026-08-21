@@ -3,6 +3,7 @@ import type { Board, NormalizedListing } from "@/lib/types";
 import {
   normalizeAirwork,
   normalizeArbeitnow,
+  normalizeBdjobs,
   normalizeGreenhouse,
   normalizeHimalayas,
   normalizeRemoteOk,
@@ -163,6 +164,42 @@ async function fetchGreenhouse(
   }));
 }
 
+/**
+ * Cefalo's career site is a client-rendered SPA — render it with headless
+ * Chromium and extract /job/{slug} links (title is recoverable from slug).
+ */
+async function fetchCefalo(board: Pick<Board, "name" | "url">): Promise<NormalizedListing[]> {
+  const { renderPage } = await import("@/lib/adapters/browser");
+  const html = await renderPage(board.url, 5000);
+  const origin = new URL(board.url).origin;
+  const slugs = [
+    ...new Set(
+      [...html.matchAll(/href="(\/job\/([a-z0-9-]+))"/g)].map((m) => m[1] as string),
+    ),
+  ];
+  return slugs.map((path) => {
+    const slug = path.replace("/job/", "");
+    // slug format: fullstack-python-developer-lead-architect-35 → title minus trailing id
+    const title = slug
+      .replace(/-\d+$/, "")
+      .split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+    return {
+      externalId: slug,
+      title,
+      company: "Cefalo",
+      location: "Dhaka, Bangladesh",
+      isRemote: /remote/i.test(slug),
+      visaSponsorship: false,
+      tags: [],
+      url: `${origin}${path}`,
+      postedAt: null,
+      description: "",
+    } satisfies NormalizedListing;
+  });
+}
+
 /** HTML scrapers + reverse-engineered JSON APIs for BD sources. */
 async function fetchScraped(
   board: Pick<Board, "id" | "name" | "url">,
@@ -172,6 +209,8 @@ async function fetchScraped(
     listings = parseEasyJobs(await fetchText(board.url), board.url);
   } else if (host.endsWith("nextjobz.com.bd")) {
     listings = await fetchNextJobz(board);
+  } else if (host === "career.cefalo.com") {
+    listings = await fetchCefalo(board);
   } else if (host === "ignition.airwork.ai") {
     // Airwork public API: skip-based pagination, 50 per page
     listings = [];
@@ -249,6 +288,7 @@ async function fetchNextJobz(
 
 async function fetchApiListings(board: Pick<Board, "name" | "type" | "url">): Promise<NormalizedListing[]> {
   if (board.name === "Arbeitnow") return fetchArbeitnow();
+  if (board.name === "BDJobs IT") return fetchBdjobs();
 
   const normalizer = pickNormalizer(board.name);
   if (!normalizer) {
@@ -287,6 +327,30 @@ async function fetchArbeitnow(): Promise<NormalizedListing[]> {
       }
     }
     if (fresh === 0) break; // ran past the end
+  }
+  return all;
+}
+
+/**
+ * BDJobs IT category via their public search API (discovered by rendering
+ * the search page once and capturing the XHR). 279 jobs over 6 pages.
+ */
+async function fetchBdjobs(): Promise<NormalizedListing[]> {
+  const base =
+    "https://api.bdjobs.com/Jobs/api/JobSearch/GetJobSearch?Icat=&industry=&category=8&org=&jobNature=&Fcat=&location=&Qot=&jobType=&jobLevel=&postedWithin=&deadline=&keyword=&qAge=&Salary=&experience=&gender=&MExp=&genderB=&MPostings=&MCat=&version=&rpp=50&Newspaper=&armyp=&QDisablePerson=&pwd=&workplace=&facilitiesForPWD=&SaveFilterList=&UserFilterName=&HUserFilterName=&earlyJobAccess=&isPro=0&ToggleJobs=true&isFresher=false";
+  const all: NormalizedListing[] = [];
+  const seen = new Set<string>();
+  for (let pg = 1; pg <= 6; pg++) {
+    const payload = await fetchJson(`${base}&pg=${pg}`);
+    let fresh = 0;
+    for (const l of normalizeBdjobs(payload)) {
+      if (!seen.has(l.externalId)) {
+        seen.add(l.externalId);
+        all.push(l);
+        fresh++;
+      }
+    }
+    if (fresh === 0) break;
   }
   return all;
 }

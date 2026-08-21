@@ -1,0 +1,11 @@
+import { chromium } from "playwright";
+const UA = "Mozilla/5.0 (Macintosh) Chrome/126";
+const browser = await chromium.launch({ headless: true });
+const ctx = await browser.newContext({ userAgent: UA });
+const page = await ctx.newPage();
+let fullUrl = "";
+page.on("request", r => { if (r.url().includes("GetJobSearch")) fullUrl = r.url(); });
+await page.goto("https://jobs.bdjobs.com/jobsearch.asp?fcatId=8&icatId=0", { waitUntil: "networkidle", timeout: 40000 }).catch(() => {});
+await page.waitForTimeout(5000);
+console.log("FULL URL:\n", decodeURIComponent(fullUrl));
+await browser.close();

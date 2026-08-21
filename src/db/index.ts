@@ -248,6 +248,19 @@ const SEED_BOARDS: Array<{
     enabled: false, // currently returns 403 to server-side fetchers; enable to retry
   },
 
+  {
+    name: "BDJobs IT",
+    type: "api",
+    url: "https://api.bdjobs.com/Jobs/api/JobSearch/GetJobSearch?category=8",
+    keywords: [],
+  },
+  {
+    name: "Cefalo (careers)",
+    type: "scrape",
+    url: "https://career.cefalo.com/",
+    keywords: [],
+  },
+
   // ── Bangladesh sources (server-rendered HTML scrapers) ─────────────────
   {
     name: "Brain Station 23 (careers)",

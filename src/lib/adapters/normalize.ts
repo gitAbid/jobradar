@@ -157,6 +157,53 @@ export function normalizeTalvette(payload: unknown): NormalizedListing[] {
   });
 }
 
+// ── BDJobs (reverse-engineered public search API) ──────────────────────────
+// GET https://api.bdjobs.com/Jobs/api/JobSearch/GetJobSearch?category=8&pg=N&rpp=50
+// category=8 is Information Technology / Telecommunication.
+
+interface BdjobsJob {
+  Jobid?: string;
+  jobTitle?: string;
+  companyName?: string;
+  deadline?: string;
+  deadlineDB?: string;
+  publishDate?: string;
+  location?: string;
+  experience?: string;
+  jobDescription?: string;
+  eduRec?: string;
+  JobType?: string;
+  WorkPlace?: string;
+  Vacancies?: number;
+}
+
+export function normalizeBdjobs(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { data?: unknown }).data)
+      ? ((payload as { data: BdjobsJob[] }).data)
+      : [];
+  return jobs.map((j) => ({
+    externalId: String(j.Jobid ?? idFromUrl(j.jobTitle ?? "")),
+    title: String(j.jobTitle ?? "").trim(),
+    company: String(j.companyName ?? "").trim(),
+    location: [j.location, "Bangladesh"].filter(Boolean).join(", "),
+    isRemote: /remote|work from home/i.test(`${j.WorkPlace ?? ""} ${j.jobTitle ?? ""}`),
+    visaSponsorship: false,
+    tags: [
+      j.JobType,
+      j.WorkPlace,
+      j.experience,
+      j.Vacancies ? `${j.Vacancies} vacancy` : "",
+    ]
+      .filter(Boolean)
+      .map(String)
+      .slice(0, 6),
+    url: j.Jobid ? `https://jobs.bdjobs.com/jobdetails.asp?id=${j.Jobid}&ln=1` : "",
+    postedAt: toIsoDate(j.publishDate),
+    description: stripHtml(String(j.jobDescription ?? j.eduRec ?? "")),
+  }));
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const VISA_RE = /(visa\s*sponsor|work\s*permit|relocation\s*(package|support|assistance)|relocat(e|ion)\b)/i;
