@@ -248,6 +248,8 @@ async function fetchNextJobz(
 }
 
 async function fetchApiListings(board: Pick<Board, "name" | "type" | "url">): Promise<NormalizedListing[]> {
+  if (board.name === "Arbeitnow") return fetchArbeitnow();
+
   const normalizer = pickNormalizer(board.name);
   if (!normalizer) {
     // Unknown API board — best effort: expect a JSON array of job objects.
@@ -263,6 +265,30 @@ async function fetchApiListings(board: Pick<Board, "name" | "type" | "url">): Pr
   }
 
   return normalizer(await fetchJson(board.url));
+}
+
+/**
+ * Arbeitnow paginates (~175 per page) — pull the first few pages so we see
+ * beyond just the newest batch. Old listings expire via the 45-day rule.
+ */
+async function fetchArbeitnow(): Promise<NormalizedListing[]> {
+  const all: NormalizedListing[] = [];
+  const seen = new Set<string>();
+  for (let page = 1; page <= 3; page++) {
+    const payload = await fetchJson(
+      `https://www.arbeitnow.com/api/job-board-api${page > 1 ? `?page=${page}` : ""}`,
+    );
+    let fresh = 0;
+    for (const l of normalizeArbeitnow(payload)) {
+      if (!seen.has(l.externalId)) {
+        seen.add(l.externalId);
+        all.push(l);
+        fresh++;
+      }
+    }
+    if (fresh === 0) break; // ran past the end
+  }
+  return all;
 }
 
 interface GenericJob {
