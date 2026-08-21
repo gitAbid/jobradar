@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { useCallback } from "react";
 
@@ -11,6 +11,7 @@ interface Props {
 export function FilterBar({ boards }: Props) {
   const router = useRouter();
   const params = useSearchParams();
+  const pathname = usePathname();
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -18,9 +19,9 @@ export function FilterBar({ boards }: Props) {
       if (value) next.set(key, value);
       else next.delete(key);
       next.delete("page"); // filters changed → back to first page
-      router.push(`/?${next.toString()}`);
+      router.push(`${pathname}?${next.toString()}`);
     },
-    [params, router],
+    [params, router, pathname],
   );
 
   const q = params.get("q") ?? "";

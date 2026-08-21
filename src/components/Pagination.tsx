@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Props {
@@ -29,13 +29,14 @@ function buildPages(current: number, total: number): Array<number | "gap"> {
 
 export function Pagination({ currentPage, totalPages }: Props) {
   const params = useSearchParams();
+  const pathname = usePathname();
 
   if (totalPages <= 1) return null;
 
   const hrefFor = (page: number): string => {
     const next = new URLSearchParams(params.toString());
     next.set("page", String(page));
-    return `/?${next.toString()}`;
+    return `${pathname}?${next.toString()}`;
   };
 
   const navClass =

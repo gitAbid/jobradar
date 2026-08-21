@@ -24,6 +24,9 @@ export default function RootLayout({
               <Link href="/" className="hover:text-slate-900">
                 Dashboard
               </Link>
+              <Link href="/bangladesh" className="hover:text-slate-900">
+                🇧🇩 Bangladesh
+              </Link>
               <Link href="/boards" className="hover:text-slate-900">
                 Boards
               </Link>

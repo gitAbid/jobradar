@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback } from "react";
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
 export function SkillSidebar({ skills }: Props) {
   const router = useRouter();
   const params = useSearchParams();
+  const pathname = usePathname();
   const selected = params.getAll("skill");
 
   const toggle = useCallback(
@@ -25,17 +26,17 @@ export function SkillSidebar({ skills }: Props) {
         ? current.filter((s) => s !== name)
         : [...current, name];
       updated.forEach((s) => next.append("skill", s));
-      router.push(`/?${next.toString()}`);
+      router.push(`${pathname}?${next.toString()}`);
     },
-    [params, router],
+    [params, router, pathname],
   );
 
   const clearAll = useCallback(() => {
     const next = new URLSearchParams(params.toString());
     next.delete("skill");
     next.delete("page");
-    router.push(`/?${next.toString()}`);
-  }, [params, router]);
+    router.push(`${pathname}?${next.toString()}`);
+  }, [params, router, pathname]);
 
   return (
     <aside className="hidden w-52 shrink-0 lg:block">

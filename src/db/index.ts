@@ -211,6 +211,12 @@ const SEED_BOARDS: Array<{
     keywords: ["java", "spring"],
   },
   {
+    name: "Remotive (Software Dev)",
+    type: "api",
+    url: "https://remotive.com/api/remote-jobs?category=software-dev&limit=100",
+    keywords: [],
+  },
+  {
     name: "Arbeitnow",
     type: "api",
     url: "https://www.arbeitnow.com/api/job-board-api",
