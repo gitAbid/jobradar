@@ -4,7 +4,9 @@ import {
   detectVisaSponsorship,
   normalizeAirwork,
   normalizeGreenhouse,
+  normalizeSmartRecruiters,
   normalizeTalvette,
+  normalizeTekarsh,
   sanitizeTags,
   idFromUrl,
   normalizeArbeitnow,
@@ -235,6 +237,59 @@ describe("normalizeTalvette", () => {
     expect(l.isRemote).toBe(true);
     expect(l.tags).toContain("Technical");
     expect(l.description).toContain("Join our team");
+  });
+});
+
+describe("normalizeTekarsh", () => {
+  it("maps jobs with skills and filters non-active", () => {
+    const listings = normalizeTekarsh({
+      jobs: [
+        {
+          _id: "t1",
+          title: "Senior Software Engineer (Java)",
+          slug: "senior-software-engineer-java-1785389185073",
+          status: "open",
+          employmentType: "Full Time",
+          workLocation: "Dhaka",
+          workMode: "On-site",
+          technicalSkills: "Java, Spring Boot, AWS",
+          postedDate: "2026-08-15T10:00:00Z",
+          introduction: "<p>Join us</p>",
+        },
+        { _id: "t2", title: "Closed Role", status: "closed" },
+      ],
+    });
+    expect(listings).toHaveLength(1);
+    const l = listings[0];
+    expect(l.externalId).toBe("t1");
+    expect(l.title).toBe("Senior Software Engineer (Java)");
+    expect(l.location).toBe("Dhaka");
+    expect(l.tags).toContain("Java");
+    expect(l.url).toContain("/career/job/senior-software-engineer-java");
+  });
+});
+
+describe("normalizeSmartRecruiters", () => {
+  it("maps postings with company identifier URLs", () => {
+    const listings = normalizeSmartRecruiters({
+      content: [
+        {
+          id: "743999763868338",
+          name: "Software Development Engineer II (Python)",
+          releasedDate: "2021-07-29T14:01:35.000Z",
+          company: { identifier: "CraftsmenLtd", name: "Craftsmen Ltd" },
+          location: { city: "Dhaka", country: "Bangladesh" },
+        },
+      ],
+    });
+    expect(listings).toHaveLength(1);
+    const l = listings[0];
+    expect(l.externalId).toBe("743999763868338");
+    expect(l.company).toBe("Craftsmen Ltd");
+    expect(l.location).toBe("Dhaka, Bangladesh");
+    expect(l.url).toBe(
+      "https://jobs.smartrecruiters.com/CraftsmenLtd/743999763868338",
+    );
   });
 });
 

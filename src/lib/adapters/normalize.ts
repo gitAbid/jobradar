@@ -204,6 +204,100 @@ export function normalizeBdjobs(payload: unknown): NormalizedListing[] {
   }));
 }
 
+// ── Tekarsh (open careers API) ─────────────────────────────────────────────
+// GET https://tekarsh.com/api/admin/jobs?limit=1000 → { jobs: [...] }
+
+interface TekarshJob {
+  _id?: string;
+  title?: string;
+  slug?: string;
+  status?: string;
+  employmentType?: string;
+  workLocation?: string;
+  workMode?: string;
+  deadline?: string;
+  postedDate?: string;
+  technicalSkills?: string[] | string;
+  introduction?: string;
+  responsibilities?: string | string[];
+  qualifications?: string | string[];
+}
+
+export function normalizeTekarsh(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { jobs?: unknown }).jobs)
+      ? ((payload as { jobs: TekarshJob[] }).jobs)
+      : [];
+  return jobs
+    .filter((j) => !j.status || j.status === "active" || j.status === "open")
+    .map((j) => {
+      const skills =
+        typeof j.technicalSkills === "string"
+          ? j.technicalSkills.split(",").map((s) => s.trim())
+          : Array.isArray(j.technicalSkills)
+            ? j.technicalSkills
+            : [];
+      const asArray = (v: string | string[] | undefined) =>
+        Array.isArray(v) ? v.join(" ") : v ?? "";
+      return {
+        externalId: String(j._id ?? idFromUrl(j.slug ?? j.title ?? "")),
+        title: String(j.title ?? "").trim(),
+        company: "", // filled from board name
+        location: String(j.workLocation || "Dhaka, Bangladesh").trim(),
+        isRemote: /remote/i.test(`${j.workMode ?? ""} ${j.title ?? ""}`),
+        visaSponsorship: false,
+        tags: [
+          ...skills.slice(0, 8),
+          ...(j.employmentType ? [String(j.employmentType)] : []),
+          ...(j.workMode ? [String(j.workMode)] : []),
+        ].slice(0, 10),
+        url: j.slug ? `https://tekarsh.com/career/job/${j.slug}` : "",
+        postedAt: toIsoDate(j.postedDate),
+        description: stripHtml(
+          `${asArray(j.introduction)} ${asArray(j.responsibilities)} ${asArray(j.qualifications)}`,
+        ),
+      } satisfies NormalizedListing;
+    });
+}
+
+// ── SmartRecruiters hosted career pages ────────────────────────────────────
+// GET https://api.smartrecruiters.com/v1/companies/{company}/postings
+
+interface SmartRecruitersPosting {
+  id?: string;
+  name?: string;
+  releasedDate?: string;
+  company?: { identifier?: string; name?: string };
+  location?: { city?: string; region?: string; country?: string };
+}
+
+export function normalizeSmartRecruiters(payload: unknown): NormalizedListing[] {
+  const postings =
+    typeof payload === "object" &&
+    payload !== null &&
+    Array.isArray((payload as { content?: unknown }).content)
+      ? ((payload as { content: SmartRecruitersPosting[] }).content)
+      : [];
+  return postings.map((p) => {
+    const loc = [p.location?.city, p.location?.country].filter(Boolean).join(", ");
+    return {
+      externalId: String(p.id ?? idFromUrl(p.name ?? "")),
+      title: String(p.name ?? "").trim(),
+      company: String(p.company?.name ?? "").trim(),
+      location: loc || "Bangladesh",
+      isRemote: /remote/i.test(String(p.name ?? "") + " " + loc),
+      visaSponsorship: false,
+      tags: [],
+      url:
+        p.company?.identifier && p.id
+          ? `https://jobs.smartrecruiters.com/${p.company.identifier}/${p.id}`
+          : "",
+      postedAt: toIsoDate(p.releasedDate),
+      description: "",
+    } satisfies NormalizedListing;
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const VISA_RE = /(visa\s*sponsor|work\s*permit|relocation\s*(package|support|assistance)|relocat(e|ion)\b)/i;

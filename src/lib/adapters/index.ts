@@ -8,7 +8,9 @@ import {
   normalizeHimalayas,
   normalizeRemoteOk,
   normalizeRemotive,
+  normalizeSmartRecruiters,
   normalizeTalvette,
+  normalizeTekarsh,
   normalizeWorkingNomads,
   detectVisaSponsorship,
   detectRemoteScope,
@@ -286,9 +288,21 @@ async function fetchNextJobz(
   return listings;
 }
 
-async function fetchApiListings(board: Pick<Board, "name" | "type" | "url">): Promise<NormalizedListing[]> {
+async function fetchApiListings(board: Pick<Board, "id" | "name" | "type" | "url">): Promise<NormalizedListing[]> {
   if (board.name === "Arbeitnow") return fetchArbeitnow();
   if (board.name === "BDJobs IT") return fetchBdjobs();
+
+  // URL-pattern dispatch for platforms hosting many companies
+  const host = new URL(board.url).host;
+  let payload: unknown;
+  if (host.endsWith("smartrecruiters.com")) {
+    payload = await fetchJson(board.url);
+    return normalizeSmartRecruiters(payload);
+  }
+  if (host.endsWith("tekarsh.com")) {
+    payload = await fetchJson(board.url);
+    return normalizeTekarsh(payload);
+  }
 
   const normalizer = pickNormalizer(board.name);
   if (!normalizer) {

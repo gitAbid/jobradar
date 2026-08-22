@@ -260,6 +260,18 @@ const SEED_BOARDS: Array<{
     url: "https://career.cefalo.com/",
     keywords: [],
   },
+  {
+    name: "Tekarsh (careers)",
+    type: "api",
+    url: "https://tekarsh.com/api/admin/jobs?limit=1000",
+    keywords: [],
+  },
+  {
+    name: "Craftsmen (careers)",
+    type: "api",
+    url: "https://api.smartrecruiters.com/v1/companies/CraftsmenLtd/postings",
+    keywords: [],
+  },
 
   // ── Bangladesh sources (server-rendered HTML scrapers) ─────────────────
   {
