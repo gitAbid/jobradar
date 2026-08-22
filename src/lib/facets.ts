@@ -99,11 +99,11 @@ export function computeFacet<T>(
   return counts;
 }
 
-export function topValues(counts: Map<string, number>, limit = 25): FacetValue[] {
-  return [...counts.entries()]
+export function topValues(counts: Map<string, number>, limit?: number): FacetValue[] {
+  const all = [...counts.entries()]
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-    .slice(0, limit);
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return limit ? all.slice(0, limit) : all;
 }
 
 /** Normalize a possibly-repeated searchParams value into string[]. */

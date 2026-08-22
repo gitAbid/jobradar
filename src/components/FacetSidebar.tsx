@@ -52,6 +52,7 @@ function FacetSection({
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           {title}
         </span>
+        <span className="text-[11px] text-slate-400">{values.length}</span>
         {selected.length > 0 && (
           <span className="rounded-full bg-emerald-100 px-1.5 text-[11px] font-semibold text-emerald-700">
             {selected.length}

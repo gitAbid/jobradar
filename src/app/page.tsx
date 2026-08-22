@@ -95,10 +95,10 @@ export default async function DashboardPage({
 
   // ── Assemble sidebar facets ────────────────────────────────────────────
   const facets: Array<{ title: string; param: string; values: { name: string; count: number }[] }> = [
-    { title: "Skills", param: "skill", values: topValues(skillFacetCounts, 25) },
-    { title: "Country", param: "country", values: topValues(countryFacetCounts, 20) },
-    { title: "Company", param: "company", values: topValues(companyFacetCounts, 25) },
-    { title: "Source", param: "source", values: topValues(sourceFacetCounts, 25) },
+    { title: "Skills", param: "skill", values: topValues(skillFacetCounts) },
+    { title: "Country", param: "country", values: topValues(countryFacetCounts) },
+    { title: "Company", param: "company", values: topValues(companyFacetCounts) },
+    { title: "Source", param: "source", values: topValues(sourceFacetCounts) },
   ];
   // keep any selected value visible even when outside the top cut
   const ensureSelected = (
