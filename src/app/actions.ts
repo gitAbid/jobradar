@@ -26,6 +26,7 @@ function revalidateAll() {
   revalidatePath("/");
   revalidatePath("/boards");
   revalidatePath("/applied");
+  revalidatePath("/following");
 }
 
 // ── Boards CRUD ────────────────────────────────────────────────────────────
@@ -139,6 +140,27 @@ export async function removeUserTagAction(formData: FormData): Promise<void> {
   getDb()
     .prepare("UPDATE listings SET user_tags = ? WHERE id = ?")
     .run(JSON.stringify(tags.filter((t) => t !== tag)), id);
+  revalidateAll();
+}
+
+// ── Followed companies ─────────────────────────────────────────────────────
+
+/** Toggle follow state for a company (insert if absent, delete if present). */
+export async function toggleFollowCompanyAction(formData: FormData): Promise<void> {
+  const name = String(formData.get("company") ?? "").trim().slice(0, 120);
+  if (!name) return;
+  const db = getDb();
+  const exists = db
+    .prepare("SELECT 1 FROM followed_companies WHERE name = ? COLLATE NOCASE")
+    .get(name);
+  if (exists) {
+    db.prepare("DELETE FROM followed_companies WHERE name = ? COLLATE NOCASE").run(name);
+  } else {
+    db.prepare("INSERT INTO followed_companies (name, created_at) VALUES (?, ?)").run(
+      name,
+      new Date().toISOString(),
+    );
+  }
   revalidateAll();
 }
 

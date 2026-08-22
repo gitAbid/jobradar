@@ -1,4 +1,4 @@
-import { getDb, rowToListing } from "@/db";
+import { getDb, rowToListing, listFollowedCompanies } from "@/db";
 import { getGlobalKeywords, isSoundEnabled } from "@/lib/settings";
 import type { FilterableListing } from "@/lib/types";
 import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
@@ -42,6 +42,7 @@ export default async function DashboardPage({
 
   const pool = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
   const view = buildJobView(pool, sp, globalKeywords);
+  const followedCompanies = new Set(listFollowedCompanies(db).map((n) => n.toLowerCase()));
 
   return (
     <div className="flex gap-6">
@@ -72,7 +73,12 @@ export default async function DashboardPage({
           <>
             <div className="flex flex-col gap-3">
               {view.entries.map(({ listing, matched }) => (
-                <ListingCard key={listing.id} listing={listing} matched={matched} />
+                <ListingCard
+                  key={listing.id}
+                  listing={listing}
+                  matched={matched}
+                  followedCompanies={followedCompanies}
+                />
               ))}
             </div>
             <p className="text-center text-xs text-slate-400">

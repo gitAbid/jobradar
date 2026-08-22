@@ -1,6 +1,6 @@
-import { Heart, Send, Eye, ExternalLink, MapPin, Building2, Globe, Plane } from "lucide-react";
+import { Heart, Send, Eye, ExternalLink, MapPin, Building2, Globe, Plane, Star } from "lucide-react";
 import Link from "next/link";
-import { setListingStatusAction } from "@/app/actions";
+import { setListingStatusAction, toggleFollowCompanyAction } from "@/app/actions";
 import type { FilterableListing } from "@/lib/types";
 
 /** Skill chip → clicking filters the dashboard to that skill. */
@@ -73,14 +73,44 @@ function StatusButton({
   );
 }
 
+/** Follow/unfollow toggle for the listing's company (server action form). */
+function FollowCompanyButton({
+  company,
+  followed,
+}: {
+  company: string;
+  followed: boolean;
+}) {
+  return (
+    <form action={toggleFollowCompanyAction} className="inline">
+      <input type="hidden" name="company" value={company} />
+      <button
+        type="submit"
+        title={followed ? `Unfollow ${company}` : `Follow ${company} for new openings`}
+        className={`inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[11px] transition ${
+          followed
+            ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+            : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        }`}
+      >
+        <Star className={`h-3 w-3 ${followed ? "fill-current" : ""}`} />
+        {followed ? "Following" : "Follow"}
+      </button>
+    </form>
+  );
+}
+
 export function ListingCard({
   listing,
   matched,
+  followedCompanies,
 }: {
   listing: FilterableListing;
   matched: string[];
+  followedCompanies?: Set<string>;
 }) {
   const posted = listing.postedAt ? timeAgo(listing.postedAt) : null;
+  const isFollowed = followedCompanies?.has(listing.company.toLowerCase()) ?? false;
 
   return (
     <article className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300">
@@ -117,6 +147,9 @@ export function ListingCard({
               <Building2 className="h-3 w-3" />
               {listing.company || "—"}
             </span>
+            {listing.company && (
+              <FollowCompanyButton company={listing.company} followed={isFollowed} />
+            )}
             <span className="inline-flex items-center gap-1">
               <MapPin className="h-3 w-3" />
               {listing.location || "—"}

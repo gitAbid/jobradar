@@ -1,7 +1,12 @@
-import { getDb, rowToListing } from "@/db";
+import { getDb, rowToListing, listFollowedCompanies } from "@/db";
 import type { FilterableListing, ListingStatus } from "@/lib/types";
-import { addUserTagAction, removeUserTagAction, setListingStatusAction } from "@/app/actions";
-import { Heart, Send, RotateCcw, X } from "lucide-react";
+import {
+  addUserTagAction,
+  removeUserTagAction,
+  setListingStatusAction,
+  toggleFollowCompanyAction,
+} from "@/app/actions";
+import { Heart, Send, RotateCcw, X, Star } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 
@@ -11,19 +16,42 @@ const COLUMNS: Array<{ status: ListingStatus; title: string; icon: React.ReactNo
   { status: "applied", title: "Applied", icon: <Send className="h-4 w-4" /> },
 ];
 
+/** Max cards rendered per column — keeps the page hydrating in milliseconds. */
+const COLUMN_LIMIT = 50;
+
 export default async function AppliedPage() {
   await connection(); // request-time rendering
   const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT l.*, b.name AS board_name
-       FROM listings l JOIN boards b ON b.id = l.board_id
-       WHERE l.status IN ('new','favorite','applied')
-       ORDER BY COALESCE(l.posted_at, l.fetched_at) DESC`,
-    )
-    .all() as Record<string, unknown>[];
 
-  const listings = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
+  // Accurate totals per column (cheap aggregate).
+  const totals = new Map<string, number>(
+    (
+      db
+        .prepare(
+          `SELECT status, COUNT(*) AS n FROM listings
+           WHERE status IN ('new','favorite','applied') GROUP BY status`,
+        )
+        .all() as Array<{ status: string; n: number }>
+    ).map((r) => [r.status, r.n]),
+  );
+
+  // Cap each column: hydrating thousands of cards blocks the page for seconds.
+  const itemsByStatus = new Map<string, FilterableListing[]>(
+    COLUMNS.map((col) => {
+      const rows = db
+        .prepare(
+          `SELECT l.*, b.name AS board_name
+           FROM listings l JOIN boards b ON b.id = l.board_id
+           WHERE l.status = ?
+           ORDER BY COALESCE(l.posted_at, l.fetched_at) DESC
+           LIMIT ${COLUMN_LIMIT}`,
+        )
+        .all(col.status) as Record<string, unknown>[];
+      return [col.status, rows.map((r) => rowToListing(r as never)) as FilterableListing[]];
+    }),
+  );
+
+  const followedCompanies = new Set(listFollowedCompanies(db).map((n) => n.toLowerCase()));
 
   return (
     <div className="flex flex-col gap-4">
@@ -40,13 +68,14 @@ export default async function AppliedPage() {
 
       <div className="grid gap-4 md:grid-cols-3">
         {COLUMNS.map((col) => {
-          const items = listings.filter((l) => l.status === col.status);
+          const items = itemsByStatus.get(col.status) ?? [];
+          const total = totals.get(col.status) ?? 0;
           return (
             <section key={col.status} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-100/60 p-3">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                 {col.icon} {col.title}
                 <span className="ml-auto rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
-                  {items.length}
+                  {total}
                 </span>
               </h2>
 
@@ -57,8 +86,17 @@ export default async function AppliedPage() {
               )}
 
               {items.map((l) => (
-                <PipelineCard key={l.id} listing={l} />
+                <PipelineCard key={l.id} listing={l} followedCompanies={followedCompanies} />
               ))}
+
+              {total > items.length && (
+                <p className="text-center text-[11px] text-slate-400">
+                  Showing latest {items.length} of {total} —{" "}
+                  <Link href={`/?status=${col.status}`} className="underline">
+                    view all
+                  </Link>
+                </p>
+              )}
             </section>
           );
         })}
@@ -67,9 +105,16 @@ export default async function AppliedPage() {
   );
 }
 
-function PipelineCard({ listing }: { listing: FilterableListing }) {
+function PipelineCard({
+  listing,
+  followedCompanies,
+}: {
+  listing: FilterableListing;
+  followedCompanies: Set<string>;
+}) {
   const nextStatus =
     listing.status === "new" ? "favorite" : listing.status === "favorite" ? "applied" : "new";
+  const isFollowed = followedCompanies.has(listing.company.toLowerCase());
 
   return (
     <article className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -84,6 +129,24 @@ function PipelineCard({ listing }: { listing: FilterableListing }) {
       <div className="text-xs text-slate-500">
         {listing.company || "—"} · {listing.boardName}
       </div>
+
+      {/* company follow toggle */}
+      {listing.company && (
+        <form action={toggleFollowCompanyAction} className="inline self-start">
+          <input type="hidden" name="company" value={listing.company} />
+          <button
+            title={isFollowed ? `Unfollow ${listing.company}` : `Follow ${listing.company} for new openings`}
+            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] transition ${
+              isFollowed
+                ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            }`}
+          >
+            <Star className={`h-3 w-3 ${isFollowed ? "fill-current" : ""}`} />
+            {isFollowed ? "Following" : "Follow"}
+          </button>
+        </form>
+      )}
 
       {/* user tags */}
       <div className="flex flex-wrap items-center gap-1">

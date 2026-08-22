@@ -110,6 +110,12 @@ function migrate(db: DatabaseSync) {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS followed_companies (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Repair databases broken by the interrupted boards rebuild: the listings
@@ -380,6 +386,17 @@ function seed(db: DatabaseSync) {
   for (const b of SEED_BOARDS) {
     ins.run(b.name, b.type, b.url, JSON.stringify(b.keywords), b.enabled === false ? 0 : 1);
   }
+}
+
+// ── Followed companies ─────────────────────────────────────────────────────
+
+/** All followed company names, alphabetical (case-insensitive). */
+export function listFollowedCompanies(db: DatabaseSync): string[] {
+  return (
+    db.prepare("SELECT name FROM followed_companies ORDER BY name COLLATE NOCASE").all() as Array<{
+      name: string;
+    }>
+  ).map((r) => r.name);
 }
 
 // ── Row mappers ─────────────────────────────────────────────────────────────

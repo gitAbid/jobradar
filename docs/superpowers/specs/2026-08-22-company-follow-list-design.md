@@ -42,6 +42,17 @@ Added to the existing `migrate()` in `src/db/index.ts`. Company matching is exac
 - New `src/app/applied/loading.tsx` skeleton mirroring the 3-column pipeline → fallback becomes prefetchable, navigation renders instantly, content streams in.
 - Same treatment for the new `/following/loading.tsx`.
 
+## Amendment (found during verification)
+
+The pipeline page rendered **every** new/favorite/applied listing unpaginated (~2,600 cards in
+practice); hydrating that many form-heavy cards blocked content for 4–9s even after the loading
+shell fix. Capping applied during implementation:
+
+- `/applied`: per-column `LIMIT 50` (latest by post date), accurate per-status totals in the
+  header badge, and a "showing latest 50 of N — view all" link to `/?status=<status>`.
+- `/following`: feed capped at latest 200 openings; chip counts come from a dedicated aggregate
+  query so they stay correct when truncated; truncation hint shown at the cap.
+
 ## Error handling
 
 - Toggle action silently ignores invalid/empty input (consistent with existing actions).
