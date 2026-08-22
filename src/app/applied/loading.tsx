@@ -6,8 +6,8 @@ export default function Loading() {
         <div className="h-6 w-28 animate-pulse rounded bg-slate-200" />
         <div className="mt-2 h-4 w-72 animate-pulse rounded bg-slate-200" />
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
-        {[0, 1, 2].map((col) => (
+      <div className="grid gap-4 md:grid-cols-2">
+        {[0, 1].map((col) => (
           <section key={col} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-100/60 p-3">
             <div className="h-5 w-24 animate-pulse rounded bg-slate-200" />
             {[0, 1, 2].map((i) => (

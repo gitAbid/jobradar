@@ -6,12 +6,11 @@ import {
   setListingStatusAction,
   toggleFollowCompanyAction,
 } from "@/app/actions";
-import { Heart, Send, RotateCcw, X, Star } from "lucide-react";
+import { Heart, Send, X, Star } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 
 const COLUMNS: Array<{ status: ListingStatus; title: string; icon: React.ReactNode }> = [
-  { status: "new", title: "New", icon: <RotateCcw className="h-4 w-4" /> },
   { status: "favorite", title: "Favorite", icon: <Heart className="h-4 w-4" /> },
   { status: "applied", title: "Applied", icon: <Send className="h-4 w-4" /> },
 ];
@@ -29,7 +28,7 @@ export default async function AppliedPage() {
       db
         .prepare(
           `SELECT status, COUNT(*) AS n FROM listings
-           WHERE status IN ('new','favorite','applied') GROUP BY status`,
+           WHERE status IN ('favorite','applied') GROUP BY status`,
         )
         .all() as Array<{ status: string; n: number }>
     ).map((r) => [r.status, r.n]),
@@ -58,15 +57,15 @@ export default async function AppliedPage() {
       <div>
         <h1 className="text-xl font-bold">Pipeline</h1>
         <p className="text-sm text-slate-500">
-          Track what you care about. Hidden jobs are excluded —{" "}
-          <Link href="/?status=hidden" className="underline">
-            view hidden
-          </Link>
-          .
+          Your saved jobs — favorite and applied. Favorite new finds from the{" "}
+          <Link href="/" className="underline">
+            Dashboard
+          </Link>{" "}
+          job list; they show up here.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {COLUMNS.map((col) => {
           const items = itemsByStatus.get(col.status) ?? [];
           const total = totals.get(col.status) ?? 0;
@@ -105,6 +104,37 @@ export default async function AppliedPage() {
   );
 }
 
+function StatusButton({
+  id,
+  status,
+  active,
+  children,
+}: {
+  id: number;
+  status: ListingStatus;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <form action={setListingStatusAction} className="flex-1">
+      <input type="hidden" name="id" value={id} />
+      {/* clicking the active status removes the job from the board (back to new) */}
+      <input type="hidden" name="status" value={active ? "new" : status} />
+      <button
+        type="submit"
+        title={active ? "Remove from board" : undefined}
+        className={`w-full inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1 text-xs transition ${
+          active
+            ? "border-slate-900 bg-slate-900 text-white"
+            : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
+        }`}
+      >
+        {children}
+      </button>
+    </form>
+  );
+}
+
 function PipelineCard({
   listing,
   followedCompanies,
@@ -112,8 +142,6 @@ function PipelineCard({
   listing: FilterableListing;
   followedCompanies: Set<string>;
 }) {
-  const nextStatus =
-    listing.status === "new" ? "favorite" : listing.status === "favorite" ? "applied" : "new";
   const isFollowed = followedCompanies.has(listing.company.toLowerCase());
 
   return (
@@ -170,14 +198,15 @@ function PipelineCard({
         </form>
       </div>
 
-      <form action={setListingStatusAction} className="mt-auto pt-1">
-        <input type="hidden" name="id" value={listing.id} />
-        <input type="hidden" name="status" value={nextStatus} />
-        <button className="w-full rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-slate-400">
-          Move to{" "}
-          {nextStatus === "favorite" ? "❤️ Favorite" : nextStatus === "applied" ? "📤 Applied" : "↩️ New"}
-        </button>
-      </form>
+      <div className="mt-auto flex items-center gap-1.5 pt-1">
+        <StatusButton id={listing.id} status="favorite" active={listing.status === "favorite"}>
+          <Heart className={`h-3.5 w-3.5 ${listing.status === "favorite" ? "fill-current" : ""}`} />
+          Favorite
+        </StatusButton>
+        <StatusButton id={listing.id} status="applied" active={listing.status === "applied"}>
+          <Send className="h-3.5 w-3.5" /> Applied
+        </StatusButton>
+      </div>
     </article>
   );
 }
