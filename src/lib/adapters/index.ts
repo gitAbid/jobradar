@@ -18,6 +18,8 @@ import {
 } from "@/lib/adapters/normalize";
 import { parseEasyJobs, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, filterTechUrls } from "@/lib/adapters/scrape";
 import { getDb } from "@/db";
+import { buildSearchText } from "@/lib/filters";
+import { extractSkills } from "@/lib/skills";
 
 const TIMEOUT_MS = 15_000;
 const UA =
@@ -290,7 +292,7 @@ async function fetchNextJobz(
 
 async function fetchApiListings(board: Pick<Board, "id" | "name" | "type" | "url">): Promise<NormalizedListing[]> {
   if (board.name === "Arbeitnow") return fetchArbeitnow();
-  if (board.name === "BDJobs IT") return fetchBdjobs();
+  if (board.name === "BDJobs IT") return fetchBdjobs(board);
 
   // URL-pattern dispatch for platforms hosting many companies
   const host = new URL(board.url).host;
@@ -349,7 +351,9 @@ async function fetchArbeitnow(): Promise<NormalizedListing[]> {
  * BDJobs IT category via their public search API (discovered by rendering
  * the search page once and capturing the XHR). 279 jobs over 6 pages.
  */
-async function fetchBdjobs(): Promise<NormalizedListing[]> {
+async function fetchBdjobs(
+  board: Pick<Board, "id" | "name" | "url">,
+): Promise<NormalizedListing[]> {
   const base =
     "https://api.bdjobs.com/Jobs/api/JobSearch/GetJobSearch?Icat=&industry=&category=8&org=&jobNature=&Fcat=&location=&Qot=&jobType=&jobLevel=&postedWithin=&deadline=&keyword=&qAge=&Salary=&experience=&gender=&MExp=&genderB=&MPostings=&MCat=&version=&rpp=50&Newspaper=&armyp=&QDisablePerson=&pwd=&workplace=&facilitiesForPWD=&SaveFilterList=&UserFilterName=&HUserFilterName=&earlyJobAccess=&isPro=0&ToggleJobs=true&isFresher=false";
   const all: NormalizedListing[] = [];
@@ -366,6 +370,63 @@ async function fetchBdjobs(): Promise<NormalizedListing[]> {
     }
     if (fresh === 0) break;
   }
+
+  // ── enrich thin descriptions via detail pages ─────────────────────────
+  // The list API returns no real description; the full JD only renders on
+  // jobdetails.asp (Angular). Enrich up to 50 per refresh via headless
+  // Chromium; rows already carrying skills are skipped so each refresh
+  // advances through the catalog.
+  const { renderText } = await import("@/lib/adapters/browser");
+  const db = getDb();
+  const skillsKnown = new Set(
+    (
+      db
+        .prepare(
+          "SELECT external_id FROM listings WHERE board_id = ? AND skills != '[]'",
+        )
+        .all(board.id) as { external_id: string }[]
+    ).map((r) => r.external_id),
+  );
+  let enriched = 0;
+  for (const l of all) {
+    if (l.description.length >= 80) continue;
+    if (enriched >= 50) break;
+    if (skillsKnown.has(l.externalId)) continue; // already enriched before
+    try {
+      const text = await renderText(l.url, 3000);
+      const cleaned = text.replace(/\s+/g, " ").trim();
+      if (cleaned.length > l.description.length + 40) {
+        l.description = cleaned;
+        enriched++;
+      }
+    } catch {
+      // detail page failed — keep list-API description
+    }
+  }
+  // persist enriched text/skills onto existing rows immediately
+  if (enriched > 0) {
+    const updText = db.prepare(
+      "UPDATE listings SET search_text = ?, skills = ? WHERE board_id = ? AND external_id = ? AND skills = '[]'",
+    );
+    for (const l of all) {
+      if (l.description.length < 80) continue;
+      const searchText = buildSearchText({
+        title: l.title,
+        company: l.company,
+        location: l.location,
+        tags: l.tags,
+        description: l.description,
+      });
+      const skills = extractSkills({
+        title: l.title,
+        tags: l.tags,
+        description: l.description,
+      });
+      updText.run(searchText, JSON.stringify(skills), board.id, l.externalId);
+    }
+    console.log(`[jobradar] bdjobs: enriched ${enriched} descriptions via detail pages`);
+  }
+
   return all;
 }
 

@@ -31,3 +31,17 @@ export async function renderPage(url: string, waitMs = 4000): Promise<string> {
     await ctx.close();
   }
 }
+
+/** Render a JS-heavy page and return its readable plain text (innerText). */
+export async function renderText(url: string, waitMs = 3500): Promise<string> {
+  const browser = await getBrowser();
+  const ctx = await browser.newContext({ userAgent: UA });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 }).catch(() => {});
+    await page.waitForTimeout(waitMs);
+    return await page.evaluate(() => document.body.innerText ?? "");
+  } finally {
+    await ctx.close();
+  }
+}

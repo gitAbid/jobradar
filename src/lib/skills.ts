@@ -30,27 +30,49 @@ export const SKILL_VOCABULARY: string[] = [
   "Prometheus", "Grafana", "ELK", "Splunk", "Datadog", "New Relic",
   // frontend & other languages
   "React", "Angular", "Vue.js", "Next.js", "TypeScript", "JavaScript", "Node.js",
-  "Python", "Rust", "PHP", ".NET", "C++",
-  // note: deliberately NO "Go" — it matches the English word constantly
+  "Python", "Rust", "PHP", ".NET", "C++", "C#",
   // practices
   "Git", "Agile", "Scrum", "System Design", "Event-Driven Architecture", "Domain-Driven Design",
 ];
 
+/**
+ * Alternate spellings accepted for each canonical skill. Matching is
+ * case-insensitive, hyphen/space tolerant, word-bounded.
+ */
+export const SKILL_ALIASES: Record<string, string[]> = {
+  PostgreSQL: ["postgres"],
+  "SQL Server": ["ms sql", "mssql"],
+  Kubernetes: ["k8s"],
+  "Node.js": ["nodejs", "node js"],
+  "Next.js": ["nextjs", "next js"],
+  "Vue.js": ["vuejs", "vue js"],
+  Elasticsearch: ["elastic search"],
+  "REST API": ["restful", "rest apis"],
+  "CI/CD": ["ci cd", "cicd"],
+  MongoDB: ["mongo db"],
+  Java: ["core java", "java se"],
+  ".NET": ["dotnet", "asp.net", "asp net", "net core"],
+};
+
 const REGEX_CACHE = new Map<string, RegExp>();
 
-/** Word-boundary regex per skill; tolerant of e.g. "springboot", "CI/CD". */
+/** Word-boundary regex per skill incl. aliases; tolerant of "springboot", "CI/CD". */
 function skillRegex(skill: string): RegExp {
   let re = REGEX_CACHE.get(skill);
   if (!re) {
-    // allow optional space/hyphen between words: "Spring Boot" ~ /spring[- ]?boot/
-    const pattern = skill
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-      .replace(/\s+/g, " ")
-      .split(" ")
-      .join("[- ]?");
+    const alts = [skill, ...(SKILL_ALIASES[skill] ?? [])];
+    const pattern = alts
+      .map((alt) =>
+        alt
+          .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+          .replace(/\s+/g, " ")
+          .split(" ")
+          .join("[- ]?"),
+      )
+      .join("|");
     const pre = /^\w/.test(skill) ? "\\b" : "";
     const post = /\w$/.test(skill) ? "\\b" : "";
-    re = new RegExp(`${pre}${pattern}${post}`, "i");
+    re = new RegExp(`${pre}(?:${pattern})${post}`, "i");
     REGEX_CACHE.set(skill, re);
   }
   return re;
