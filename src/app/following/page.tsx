@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import { getDb, rowToListing, listFollowedCompanies } from "@/db";
 import { toggleFollowCompanyAction } from "@/app/actions";
 import { ListingCard } from "@/components/ListingCard";
-import { X } from "lucide-react";
+import { X, Star } from "lucide-react";
 import Link from "next/link";
 import type { FilterableListing } from "@/lib/types";
 
@@ -51,8 +51,8 @@ export default async function FollowingPage() {
       <div>
         <h1 className="text-xl font-bold">Following</h1>
         <p className="text-sm text-slate-500">
-          Current openings from companies you follow. Follow more via the ★ button next to any
-          company name on the <Link href="/" className="underline">Dashboard</Link>.
+          Current openings from companies you follow. Follow more via the star on any company
+          badge on the <Link href="/" className="underline">Dashboard</Link>.
         </p>
       </div>
 
@@ -63,7 +63,8 @@ export default async function FollowingPage() {
               key={name}
               className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
             >
-              ⭐ {name}
+              <Star className="h-3 w-3 fill-current text-amber-500" />
+              {name}
               <span className="text-amber-600">· {counts.get(name.toLowerCase()) ?? 0}</span>
               <form action={toggleFollowCompanyAction} className="inline">
                 <input type="hidden" name="company" value={name} />
@@ -82,9 +83,8 @@ export default async function FollowingPage() {
 
       {followed.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          You&apos;re not following any companies yet. Tap{" "}
-          <strong>★ Follow</strong> next to a company&apos;s name on any job card to track their
-          openings here.
+          You&apos;re not following any companies yet. Tap the star on a company&apos;s badge on
+          any job card to track their openings here.
         </div>
       ) : listings.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">

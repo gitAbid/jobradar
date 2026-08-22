@@ -29,7 +29,7 @@ export function TestBoardButton({ boardId }: { boardId: number }) {
         <FlaskConical className="h-3.5 w-3.5" /> Test
       </button>
       {result && (
-        <span className={`text-xs ${result.startsWith("✅") ? "text-emerald-600" : result.startsWith("❌") ? "text-red-600" : "text-slate-500"}`}>
+        <span className={`text-xs ${result.startsWith("OK") ? "text-emerald-600" : result.startsWith("Failed") ? "text-red-600" : "text-slate-500"}`}>
           {result}
         </span>
       )}

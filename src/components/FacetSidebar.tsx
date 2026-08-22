@@ -2,7 +2,8 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useState } from "react";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, X, Pin } from "lucide-react";
+import { togglePinCountryAction } from "@/app/actions";
 
 export interface FacetValue {
   name: string;
@@ -14,6 +15,7 @@ interface FacetSectionProps {
   param: string;
   values: FacetValue[];
   selected: string[];
+  pinnedCountries: string[];
   open: boolean;
   onToggleOpen: (param: string) => void;
   onToggle: (param: string, name: string) => void;
@@ -30,11 +32,13 @@ function FacetSection({
   param,
   values,
   selected,
+  pinnedCountries,
   open,
   onToggleOpen,
   onToggle,
   onClearParam,
 }: FacetSectionProps) {
+  const pinnable = param === "country";
   return (
     <section
       className={`flex min-h-0 flex-col rounded-lg ${open ? "flex-1" : "shrink-0"}`}
@@ -84,10 +88,11 @@ function FacetSection({
         <ul className="mt-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
           {values.map(({ name, count }) => {
             const active = selected.includes(name);
+            const pinned = pinnedCountries.includes(name.toLowerCase());
             return (
-              <li key={name}>
+              <li key={name} className="group/row flex items-center gap-0.5">
                 <label
-                  className={`flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-sm transition ${
+                  className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-sm transition ${
                     active
                       ? "bg-emerald-50 font-medium text-emerald-800"
                       : "text-slate-600 hover:bg-slate-50"
@@ -99,11 +104,27 @@ function FacetSection({
                     onChange={() => onToggle(param, name)}
                     className="accent-emerald-600"
                   />
-                  <span className="flex-1 truncate" title={name}>
+                  <span className="min-w-0 flex-1 truncate" title={name}>
                     {name}
                   </span>
                   <span className="text-xs text-slate-400">{count}</span>
                 </label>
+                {pinnable && (
+                  <form action={togglePinCountryAction}>
+                    <input type="hidden" name="country" value={name} />
+                    <button
+                      type="submit"
+                      title={pinned ? `Unpin ${name} from nav` : `Pin ${name} to nav bar`}
+                      className={`rounded p-1 transition ${
+                        pinned
+                          ? "text-emerald-600 hover:text-emerald-700"
+                          : "text-slate-300 opacity-0 hover:bg-slate-100 hover:text-slate-500 focus:opacity-100 group-hover/row:opacity-100"
+                      }`}
+                    >
+                      <Pin className={`h-3 w-3 ${pinned ? "fill-current" : ""}`} />
+                    </button>
+                  </form>
+                )}
               </li>
             );
           })}
@@ -134,6 +155,7 @@ interface Props {
     param: string;
     values: FacetValue[];
   }>;
+  pinnedCountries?: string[];
 }
 
 /**
@@ -142,7 +164,7 @@ interface Props {
  * scrolls internally). Within a facet selections OR together; across
  * facets they AND. Toggling any value resets pagination.
  */
-export function FacetSidebar({ facets }: Props) {
+export function FacetSidebar({ facets, pinnedCountries = [] }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   const pathname = usePathname();
@@ -198,6 +220,7 @@ export function FacetSidebar({ facets }: Props) {
             param={f.param}
             values={f.values}
             selected={params.getAll(f.param)}
+            pinnedCountries={pinnedCountries}
             open={openMap[f.param] ?? false}
             onToggleOpen={toggleOpen}
             onToggle={toggleValue}

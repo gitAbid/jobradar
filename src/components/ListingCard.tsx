@@ -73,8 +73,8 @@ function StatusButton({
   );
 }
 
-/** Follow/unfollow toggle for the listing's company (server action form). */
-function FollowCompanyButton({
+/** Company badge with integrated follow toggle — click to follow/unfollow. */
+export function CompanyBadge({
   company,
   followed,
 }: {
@@ -87,14 +87,15 @@ function FollowCompanyButton({
       <button
         type="submit"
         title={followed ? `Unfollow ${company}` : `Follow ${company} for new openings`}
-        className={`inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[11px] transition ${
+        className={`inline-flex max-w-[240px] items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${
           followed
-            ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
-            : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+            : "border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-300 hover:bg-amber-50/50 hover:text-amber-700"
         }`}
       >
-        <Star className={`h-3 w-3 ${followed ? "fill-current" : ""}`} />
-        {followed ? "Following" : "Follow"}
+        <Building2 className="h-3 w-3 shrink-0" />
+        <span className="truncate">{company}</span>
+        <Star className={`h-3 w-3 shrink-0 ${followed ? "fill-current text-amber-500" : "opacity-40"}`} />
       </button>
     </form>
   );
@@ -143,12 +144,10 @@ export function ListingCard({
             )}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1">
-              <Building2 className="h-3 w-3" />
-              {listing.company || "—"}
-            </span>
-            {listing.company && (
-              <FollowCompanyButton company={listing.company} followed={isFollowed} />
+            {listing.company ? (
+              <CompanyBadge company={listing.company} followed={isFollowed} />
+            ) : (
+              <span>—</span>
             )}
             <span className="inline-flex items-center gap-1">
               <MapPin className="h-3 w-3" />

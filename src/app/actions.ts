@@ -89,8 +89,8 @@ export async function testBoardAction(
   const outcome = await refreshBoard(board);
   revalidateAll();
   return outcome.ok
-    ? { ok: true, message: `✅ Fetched ${outcome.fetched} listings (${outcome.inserted} new)` }
-    : { ok: false, message: `❌ ${outcome.error ?? "Unknown error"}` };
+    ? { ok: true, message: `OK · Fetched ${outcome.fetched} listings (${outcome.inserted} new)` }
+    : { ok: false, message: `Failed · ${outcome.error ?? "Unknown error"}` };
 }
 
 // ── Listing status & tags ──────────────────────────────────────────────────
@@ -162,6 +162,28 @@ export async function toggleFollowCompanyAction(formData: FormData): Promise<voi
     );
   }
   revalidateAll();
+}
+
+// ── Pinned countries ───────────────────────────────────────────────────────
+
+/** Toggle pin state for a country (shown in the nav bar while pinned). */
+export async function togglePinCountryAction(formData: FormData): Promise<void> {
+  const name = String(formData.get("country") ?? "").trim().slice(0, 60);
+  if (!name) return;
+  const db = getDb();
+  const exists = db
+    .prepare("SELECT 1 FROM pinned_countries WHERE name = ? COLLATE NOCASE")
+    .get(name);
+  if (exists) {
+    db.prepare("DELETE FROM pinned_countries WHERE name = ? COLLATE NOCASE").run(name);
+  } else {
+    db.prepare("INSERT INTO pinned_countries (name, created_at) VALUES (?, ?)").run(
+      name,
+      new Date().toISOString(),
+    );
+  }
+  // layout renders the pinned-country nav on every route
+  revalidatePath("/", "layout");
 }
 
 // ── Settings ───────────────────────────────────────────────────────────────

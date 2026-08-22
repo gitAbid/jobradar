@@ -1,4 +1,4 @@
-import { getDb, rowToListing } from "@/db";
+import { getDb, rowToListing, listPinnedCountries } from "@/db";
 import { isBangladeshRelevant } from "@/lib/bd";
 import { getGlobalKeywords } from "@/lib/settings";
 import type { FilterableListing } from "@/lib/types";
@@ -7,6 +7,7 @@ import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
 import { FacetSidebar } from "@/components/FacetSidebar";
 import { Pagination } from "@/components/Pagination";
+import { MapPin } from "lucide-react";
 import { connection } from "next/server";
 
 interface SearchParams {
@@ -48,11 +49,13 @@ export default async function BangladeshPage({
 
   return (
     <div className="flex gap-6">
-      <FacetSidebar facets={view.facets} />
+      <FacetSidebar facets={view.facets} pinnedCountries={listPinnedCountries(db).map((n) => n.toLowerCase())} />
 
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <div>
-          <h1 className="text-xl font-bold">🇧🇩 Bangladesh</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold">
+            <MapPin className="h-5 w-5 text-emerald-600" /> Bangladesh
+          </h1>
           <p className="text-sm text-slate-500">
             Jobs located in Bangladesh (Dhaka, Chattogram, Sylhet…) plus remote roles that accept
             Bangladeshi candidates. {view.totalNew} new · {view.totalVisible} shown

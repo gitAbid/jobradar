@@ -1,4 +1,4 @@
-import { getDb, rowToListing, listFollowedCompanies } from "@/db";
+import { getDb, rowToListing, listFollowedCompanies, listPinnedCountries } from "@/db";
 import { getGlobalKeywords, isSoundEnabled } from "@/lib/settings";
 import type { FilterableListing } from "@/lib/types";
 import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
@@ -43,10 +43,11 @@ export default async function DashboardPage({
   const pool = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
   const view = buildJobView(pool, sp, globalKeywords);
   const followedCompanies = new Set(listFollowedCompanies(db).map((n) => n.toLowerCase()));
+  const pinnedCountries = listPinnedCountries(db).map((n) => n.toLowerCase());
 
   return (
     <div className="flex gap-6">
-      <FacetSidebar facets={view.facets} />
+      <FacetSidebar facets={view.facets} pinnedCountries={pinnedCountries} />
 
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

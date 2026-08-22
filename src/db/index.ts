@@ -116,6 +116,12 @@ function migrate(db: DatabaseSync) {
       name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS pinned_countries (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Repair databases broken by the interrupted boards rebuild: the listings
@@ -394,6 +400,17 @@ function seed(db: DatabaseSync) {
 export function listFollowedCompanies(db: DatabaseSync): string[] {
   return (
     db.prepare("SELECT name FROM followed_companies ORDER BY name COLLATE NOCASE").all() as Array<{
+      name: string;
+    }>
+  ).map((r) => r.name);
+}
+
+// ── Pinned countries ───────────────────────────────────────────────────────
+
+/** All pinned country names, alphabetical (case-insensitive). */
+export function listPinnedCountries(db: DatabaseSync): string[] {
+  return (
+    db.prepare("SELECT name FROM pinned_countries ORDER BY name COLLATE NOCASE").all() as Array<{
       name: string;
     }>
   ).map((r) => r.name);
