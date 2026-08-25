@@ -70,6 +70,55 @@ export function parseEasyJobs(html: string, baseUrl: string): NormalizedListing[
   return [...seen.values()];
 }
 
+// ── easy.jobs detail pages ─────────────────────────────────────────────────
+// https://{tenant}.easy.jobs/{slug} is server-rendered: the full JD lives in
+// a `<section class="content-card …">` block headed by `<h1>Description</h1>`,
+// and a schema.org JobPosting JSON-LD carries datePosted.
+
+export interface EasyJobsDetail {
+  description: string;
+  postedAt: string | null;
+}
+
+export function parseEasyJobsDetail(html: string): EasyJobsDetail | null {
+  const h1 = /<h1[^>]*>\s*Description\s*<\/h1>/i.exec(html);
+  if (!h1) return null;
+  const start = h1.index + h1[0].length;
+  const end = html.toLowerCase().indexOf("</section>", start);
+  if (end === -1) return null;
+
+  // block-level closers become line breaks; inline tags vanish; entities decode
+  const rawLines = html
+    .slice(start, end)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|li|h[1-6]|div|ul|ol|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .split("\n");
+  const description = rawLines
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .map(decodeEntities)
+    .join("\n");
+
+  let postedAt: string | null = null;
+  for (const m of html.matchAll(
+    /<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    try {
+      const data = JSON.parse(m[1]) as Record<string, unknown>;
+      if (data["@type"] === "JobPosting" && typeof data.datePosted === "string") {
+        const d = new Date(data.datePosted);
+        postedAt = Number.isNaN(d.getTime()) ? null : d.toISOString();
+      }
+    } catch {
+      // malformed JSON-LD — ignore
+    }
+  }
+
+  if (!description) return null;
+  return { description, postedAt };
+}
+
 // ── tokyodev.com (SSR listing grouped by company) ──────────────────────────
 // https://www.tokyodev.com/jobs renders ALL listings on one page. Each job:
 //   <div class="text-lg font-bold mb-1"><a href="/companies/{c}/jobs/{slug}">TITLE</a></div>

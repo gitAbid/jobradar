@@ -19,7 +19,7 @@ import {
   parseJapanDevDetail,
   capDescription,
 } from "@/lib/adapters/normalize";
-import { parseEasyJobs, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
+import { parseEasyJobs, parseEasyJobsDetail, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
 import { getDb } from "@/db";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
@@ -175,7 +175,7 @@ async function fetchGreenhouse(
  * Cefalo's career site is a client-rendered SPA — render it with headless
  * Chromium and extract /job/{slug} links (title is recoverable from slug).
  */
-async function fetchCefalo(board: Pick<Board, "name" | "url">): Promise<NormalizedListing[]> {
+async function fetchCefalo(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
   const { renderPage } = await import("@/lib/adapters/browser");
   const html = await renderPage(board.url, 5000);
   const origin = new URL(board.url).origin;
@@ -184,7 +184,7 @@ async function fetchCefalo(board: Pick<Board, "name" | "url">): Promise<Normaliz
       [...html.matchAll(/href="(\/job\/([a-z0-9-]+))"/g)].map((m) => m[1] as string),
     ),
   ];
-  return slugs.map((path) => {
+  const listings = slugs.map((path) => {
     const slug = path.replace("/job/", "");
     // slug format: fullstack-python-developer-lead-architect-35 → title minus trailing id
     const title = slug
@@ -205,6 +205,64 @@ async function fetchCefalo(board: Pick<Board, "name" | "url">): Promise<Normaliz
       description: "",
     } satisfies NormalizedListing;
   });
+
+  // ── enrich descriptions via rendered detail pages ────────────────────────
+  // Cefalo's career site is a client-rendered SPA — JDs only exist after
+  // Chromium renders each /job/{slug} page. Bounded like the other adapters.
+  const db = getDb();
+  const knownEnriched = new Set(
+    (
+      db
+        .prepare(
+          "SELECT external_id FROM listings WHERE board_id = ? AND description != ''",
+        )
+        .all(board.id) as { external_id: string }[]
+    ).map((r) => r.external_id),
+  );
+  const { renderText } = await import("@/lib/adapters/browser");
+  let enriched = 0;
+  for (const l of listings) {
+    if (enriched >= 5) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const text = (await renderText(l.url, 4000))
+        // strip the SPA's site chrome: nav links before the job content and
+        // the contact/copyright footer after it
+        .replace(/^[\s\S]*?Back to job list/i, "")
+        .replace(/Copyright ©[\s\S]*$/i, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text.length < 300) continue; // nav/challenge shell only
+      l.description = text;
+      enriched++;
+    } catch {
+      // render failed — retry next refresh
+    }
+  }
+  if (enriched > 0) {
+    const upd = db.prepare(
+      "UPDATE listings SET search_text = ?, skills = ?, description = ? WHERE board_id = ? AND external_id = ?",
+    );
+    for (const l of listings) {
+      if (!l.description) continue;
+      upd.run(
+        buildSearchText({
+          title: l.title,
+          company: l.company,
+          location: l.location,
+          tags: l.tags,
+          description: l.description,
+        }),
+        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
+        capDescription(l.description),
+        board.id,
+        l.externalId,
+      );
+    }
+    console.log(`[jobradar] cefalo: enriched ${enriched} descriptions via detail pages`);
+  }
+
+  return listings;
 }
 
 /** HTML scrapers + reverse-engineered JSON APIs for BD sources. */
@@ -213,7 +271,7 @@ async function fetchScraped(
 ): Promise<NormalizedListing[]> {  const host = new URL(board.url).host;
   let listings: NormalizedListing[];
   if (host.endsWith("easy.jobs")) {
-    listings = parseEasyJobs(await fetchText(board.url), board.url);
+    listings = await fetchEasyJobs(board);
   } else if (host.endsWith("tokyodev.com")) {
     listings = await fetchTokyoDev(board);
   } else if (host.endsWith("nextjobz.com.bd")) {
@@ -247,6 +305,67 @@ async function fetchScraped(
     ...l,
     company: l.company || board.name.replace(/ \(careers\)$/i, ""),
   }));
+}
+
+/**
+ * easy.jobs tenant boards: listing page AND detail pages are server-rendered
+ * (the full JD sits in a Description content-card section — see
+ * parseEasyJobsDetail). Enrich up to 10 new jobs per refresh; rows that
+ * already carry a description are skipped so each refresh advances.
+ */
+async function fetchEasyJobs(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const listings = parseEasyJobs(await fetchText(board.url), board.url);
+
+  const db = getDb();
+  const knownEnriched = new Set(
+    (
+      db
+        .prepare(
+          "SELECT external_id FROM listings WHERE board_id = ? AND description != ''",
+        )
+        .all(board.id) as { external_id: string }[]
+    ).map((r) => r.external_id),
+  );
+
+  let enriched = 0;
+  for (const l of listings) {
+    if (enriched >= 10) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const detail = parseEasyJobsDetail(await fetchText(l.url));
+      if (!detail?.description) continue;
+      l.description = detail.description;
+      if (detail.postedAt && !l.postedAt) l.postedAt = detail.postedAt;
+      enriched++;
+    } catch {
+      // detail fetch failed — try again next refresh
+    }
+  }
+  if (enriched > 0) {
+    const upd = db.prepare(
+      "UPDATE listings SET search_text = ?, skills = ?, posted_at = ?, description = ? WHERE board_id = ? AND external_id = ?",
+    );
+    for (const l of listings) {
+      if (!l.description) continue;
+      upd.run(
+        buildSearchText({
+          title: l.title,
+          company: l.company,
+          location: l.location,
+          tags: l.tags,
+          description: l.description,
+        }),
+        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
+        l.postedAt,
+        capDescription(l.description),
+        board.id,
+        l.externalId,
+      );
+    }
+    console.log(`[jobradar] easy.jobs: enriched ${enriched} descriptions via detail pages`);
+  }
+
+  return listings;
 }
 
 /**
@@ -550,7 +669,7 @@ async function fetchBdjobs(
   // persist enriched text/skills onto existing rows immediately
   if (enriched > 0) {
     const updText = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ? WHERE board_id = ? AND external_id = ? AND skills = '[]'",
+      "UPDATE listings SET search_text = ?, skills = ?, description = ? WHERE board_id = ? AND external_id = ? AND skills = '[]'",
     );
     for (const l of all) {
       if (l.description.length < 80) continue;
@@ -566,7 +685,7 @@ async function fetchBdjobs(
         tags: l.tags,
         description: l.description,
       });
-      updText.run(searchText, JSON.stringify(skills), board.id, l.externalId);
+      updText.run(searchText, JSON.stringify(skills), capDescription(l.description), board.id, l.externalId);
     }
     console.log(`[jobradar] bdjobs: enriched ${enriched} descriptions via detail pages`);
   }

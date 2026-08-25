@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { decodeEntities, parseEasyJobs, parseNextJobzRsc, parseTokyoDev, parseTokyoDevDetail } from "@/lib/adapters/scrape";
+import { decodeEntities, parseEasyJobs, parseEasyJobsDetail, parseNextJobzRsc, parseTokyoDev, parseTokyoDevDetail } from "@/lib/adapters/scrape";
 
 const tokyodevHtml = readFileSync(new URL("./fixtures/tokyodev.html", import.meta.url), "utf8");
 
@@ -141,5 +141,45 @@ describe("parseTokyoDevDetail", () => {
 
   it("returns null when no JobPosting block exists", () => {
     expect(parseTokyoDevDetail("<html><body>challenge page</body></html>")).toBeNull();
+  });
+});
+
+describe("parseEasyJobsDetail", () => {
+  // mirrors the SSR structure of https://{tenant}.easy.jobs/{slug} detail pages
+  const DETAIL_HTML = `<html><head>
+    <script type="application/ld+json">{"@context":"https://schema.org/","@type":"JobPosting","title":"Asp.Net Developer","datePosted":"2026-07-28"}</script>
+  </head><body>
+    <section class="content-card section-gap">
+      <div class="block-info translate">
+        <h1>Description</h1>
+        <p>We are seeking skilled engineers to join <strong>our team</strong>.</p>
+        <h5>Job Responsibilities</h5>
+        <ul>
+          <li>Design REST APIs using ASP.NET Core</li>
+          <li>Build UIs with React &amp; Redux</li>
+        </ul>
+        <p>3 to 6 years of experience&nbsp;required.</p>
+      </div>
+    </section>
+    <section class="content-card"><p>unrelated section</p></section>
+  </body></html>`;
+
+  it("extracts the full Description section text and the JSON-LD posting date", () => {
+    const detail = parseEasyJobsDetail(DETAIL_HTML);
+    expect(detail).not.toBeNull();
+    expect(detail!.description).toBe(
+      [
+        "We are seeking skilled engineers to join our team.",
+        "Job Responsibilities",
+        "Design REST APIs using ASP.NET Core",
+        "Build UIs with React & Redux",
+        "3 to 6 years of experience required.",
+      ].join("\n"),
+    );
+    expect(detail!.postedAt).toBe("2026-07-28T00:00:00.000Z");
+  });
+
+  it("returns null when there is no Description section", () => {
+    expect(parseEasyJobsDetail("<html><body>challenge page</body></html>")).toBeNull();
   });
 });
