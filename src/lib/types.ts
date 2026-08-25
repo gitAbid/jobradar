@@ -39,6 +39,8 @@ export interface Listing {
   fetchedAt: string;
   status: ListingStatus;
   userTags: string[];
+  /** job description text, persisted from the source (capped at 20k chars) */
+  description: string;
 }
 
 /** A listing row joined with its board's keywords — used by the filter engine. */
