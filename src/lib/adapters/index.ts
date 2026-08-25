@@ -17,6 +17,7 @@ import {
   detectRemoteScope,
   idFromUrl,
   parseJapanDevDetail,
+  capDescription,
 } from "@/lib/adapters/normalize";
 import { parseEasyJobs, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
 import { getDb } from "@/db";
@@ -286,7 +287,7 @@ async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise
   }
   if (enriched > 0) {
     const upd = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ?, location = ?, posted_at = ? WHERE board_id = ? AND external_id = ?",
+      "UPDATE listings SET search_text = ?, skills = ?, location = ?, posted_at = ?, description = ? WHERE board_id = ? AND external_id = ?",
     );
     for (const l of listings) {
       if (!l.description) continue;
@@ -301,6 +302,7 @@ async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise
         JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
         l.location,
         l.postedAt,
+        capDescription(l.description),
         board.id,
         l.externalId,
       );
@@ -464,7 +466,7 @@ async function fetchJapanDev(board: Pick<Board, "id" | "name" | "url">): Promise
   // upsert in refresh.ts never overwrites existing rows)
   if (enriched > 0) {
     const upd = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ?, visa_sponsorship = ? WHERE board_id = ? AND external_id = ?",
+      "UPDATE listings SET search_text = ?, skills = ?, visa_sponsorship = ?, description = ? WHERE board_id = ? AND external_id = ?",
     );
     for (const l of all) {
       if (l.description.length < 80) continue;
@@ -478,6 +480,7 @@ async function fetchJapanDev(board: Pick<Board, "id" | "name" | "url">): Promise
         }),
         JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
         l.visaSponsorship ? 1 : 0,
+        capDescription(l.description),
         board.id,
         l.externalId,
       );
