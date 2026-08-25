@@ -101,6 +101,7 @@ function migrate(db: DatabaseSync) {
                        CHECK (status IN ('new','favorite','applied','hidden')),
       user_tags        TEXT NOT NULL DEFAULT '[]',
       search_text      TEXT NOT NULL DEFAULT '',
+      description      TEXT NOT NULL DEFAULT '',
       UNIQUE (board_id, external_id)
     );
     CREATE INDEX IF NOT EXISTS idx_listings_board ON listings(board_id);
@@ -160,19 +161,20 @@ function migrate(db: DatabaseSync) {
           fetched_at       TEXT NOT NULL,
           status           TEXT NOT NULL DEFAULT 'new'
                            CHECK (status IN ('new','favorite','applied','hidden')),
-          user_tags        TEXT NOT NULL DEFAULT '[]',
-          search_text      TEXT NOT NULL DEFAULT '',
-          UNIQUE (board_id, external_id)
-        )`);
+           user_tags        TEXT NOT NULL DEFAULT '[]',
+           search_text      TEXT NOT NULL DEFAULT '',
+           description      TEXT NOT NULL DEFAULT '',
+           UNIQUE (board_id, external_id)
+         )`);
         db.exec(`
           INSERT INTO listings_fixed (
             id, board_id, external_id, title, company, location,
             is_remote, visa_sponsorship, remote_scope, tags, skills, url,
-            posted_at, fetched_at, status, user_tags, search_text
+            posted_at, fetched_at, status, user_tags, search_text, description
           )
           SELECT id, board_id, external_id, title, company, location,
                  is_remote, visa_sponsorship, remote_scope, tags, skills, url,
-                 posted_at, fetched_at, status, user_tags, search_text
+                 posted_at, fetched_at, status, user_tags, search_text, description
           FROM listings
         `);
         db.exec("DROP TABLE listings");
@@ -198,6 +200,9 @@ function migrate(db: DatabaseSync) {
   }
   if (!listingCols.includes("remote_scope")) {
     db.exec("ALTER TABLE listings ADD COLUMN remote_scope TEXT");
+  }
+  if (!listingCols.includes("description")) {
+    db.exec("ALTER TABLE listings ADD COLUMN description TEXT NOT NULL DEFAULT ''");
   }
 }
 
@@ -480,6 +485,7 @@ interface ListingRow {
   status: string;
   user_tags: string;
   search_text?: string;
+  description?: string;
   board_filter_keywords?: string;
 }
 
@@ -487,6 +493,7 @@ export function rowToListing(r: ListingRow): Listing & {
   boardName: string;
   boardFilterKeywords: string[];
   searchText: string;
+  description: string;
 } {
   return {
     id: r.id,
@@ -508,6 +515,7 @@ export function rowToListing(r: ListingRow): Listing & {
     userTags: safeParse(r.user_tags),
     boardFilterKeywords: safeParse(r.board_filter_keywords ?? "[]"),
     searchText: r.search_text ?? "",
+    description: r.description ?? "",
   };
 }
 
