@@ -260,6 +260,23 @@ const SEED_BOARDS: Array<{
     enabled: false, // currently returns 403 to server-side fetchers; enable to retry
   },
 
+  // ── Japan sources ───────────────────────────────────────────────────────
+  // JapanDev: public web API (list has no description — adapter enriches
+  // from detail endpoints). TokyoDev: SSR listing page, plain HTML scrape;
+  // descriptions filled via headless-browser detail enrichment.
+  {
+    name: "JapanDev",
+    type: "api",
+    url: "https://api.japan-dev.com/api/v1/jobs?page=1",
+    keywords: [],
+  },
+  {
+    name: "TokyoDev",
+    type: "scrape",
+    url: "https://www.tokyodev.com/jobs",
+    keywords: [],
+  },
+
   {
     name: "BDJobs IT",
     type: "api",

@@ -4,11 +4,13 @@ import {
   detectVisaSponsorship,
   normalizeAirwork,
   normalizeGreenhouse,
+  normalizeJapanDev,
   normalizeSmartRecruiters,
   normalizeTalvette,
   normalizeTekarsh,
   sanitizeTags,
   idFromUrl,
+  parseJapanDevDetail,
   normalizeArbeitnow,
   normalizeHimalayas,
   normalizeRemoteOk,
@@ -16,6 +18,7 @@ import {
 } from "@/lib/adapters/normalize";
 import remoteOkFixture from "./fixtures/remoteok.json";
 import remotiveFixture from "./fixtures/remotive.json";
+import japanDevFixture from "./fixtures/japandev.json";
 
 describe("normalizeRemoteOk", () => {
   it("skips the legal-notice element and maps fields", () => {
@@ -326,5 +329,64 @@ describe("helpers", () => {
   it("derives stable ids from urls", () => {
     expect(idFromUrl("https://a/x")).toBe(idFromUrl("https://a/x"));
     expect(idFromUrl("https://a/x")).not.toBe(idFromUrl("https://a/y"));
+  });
+});
+
+describe("normalizeJapanDev", () => {
+  it("maps job_lite entries: slug id, company url, skills tags", () => {
+    const listings = normalizeJapanDev(japanDevFixture);
+    expect(listings).toHaveLength(2);
+
+    const robotics = listings[0];
+    expect(robotics.externalId).toBe(
+      "kanaria-tech-robotics-software-engineer-navigation--deployment-66poa9",
+    );
+    expect(robotics.title).toBe("Robotics Software Engineer (Navigation & Deployment)");
+    expect(robotics.company).toBe("Kanaria Tech");
+    expect(robotics.isRemote).toBe(true);
+    // partial-remote + candidate_location_anywhere keeps the plain location
+    expect(robotics.location).toBe("Tokyo");
+    expect(robotics.url).toBe(
+      "https://japan-dev.com/jobs/kanaria-tech/kanaria-tech-robotics-software-engineer-navigation--deployment-66poa9",
+    );
+    expect(robotics.postedAt).toBe("2026-08-18T09:14:22.000Z");
+    expect(robotics.tags).toContain("Docker");
+    expect(robotics.tags).toContain("Python");
+    expect(robotics.description).toBe("");
+  });
+
+  it("marks japan-only roles and formats the JPY salary range as a tag", () => {
+    const listings = normalizeJapanDev(japanDevFixture);
+    const se = listings[1];
+    expect(se.location).toBe("Tokyo, Japan (residents only)");
+    expect(se.tags).toContain("¥5M ~ ¥9M");
+    expect(se.company).toBe("Build.io");
+  });
+
+  it("returns [] for payloads without a data array", () => {
+    expect(normalizeJapanDev({ nope: true })).toEqual([]);
+  });
+});
+
+describe("parseJapanDevDetail", () => {
+  it("strips raw_content html and maps the sponsors_visas enum", () => {
+    const detail = parseJapanDevDetail({
+      data: {
+        attributes: {
+          raw_content: "<p>Visa sponsorship available</p><p>Remote OK</p>",
+          sponsors_visas: "sponsors_visas_yes",
+        },
+      },
+    });
+    expect(detail.description).toBe("Visa sponsorship available Remote OK");
+    expect(detail.sponsorsVisas).toBe(true);
+  });
+
+  it("returns null sponsors when the enum is absent or unknown", () => {
+    expect(parseJapanDevDetail({ data: { attributes: {} } })).toEqual({
+      description: "",
+      sponsorsVisas: null,
+    });
+    expect(parseJapanDevDetail({ data: { attributes: { sponsors_visas: "weird" } } }).sponsorsVisas).toBeNull();
   });
 });

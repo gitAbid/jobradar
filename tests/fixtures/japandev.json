@@ -1,0 +1,151 @@
+{
+  "data": [
+    {
+      "id": "3581",
+      "type": "job_lite",
+      "attributes": {
+        "id": 3581,
+        "title": "Robotics Software Engineer (Navigation & Deployment)",
+        "slug": "kanaria-tech-robotics-software-engineer-navigation--deployment-66poa9",
+        "intro": null,
+        "technologies": null,
+        "location": "Tokyo",
+        "application_email": "kanaria-tech@japan-dev.com",
+        "salary_min": null,
+        "salary_max": null,
+        "application_url": "",
+        "skills": [
+          {
+            "name": "Docker",
+            "system_name": "docker",
+            "position": 10,
+            "short_name": null,
+            "featured": true
+          },
+          {
+            "name": "Python",
+            "system_name": "python",
+            "position": 3,
+            "short_name": "",
+            "featured": true
+          },
+          {
+            "name": "C++",
+            "system_name": "c++",
+            "position": 10,
+            "short_name": "",
+            "featured": true
+          },
+          {
+            "name": "Other",
+            "system_name": "other",
+            "position": 10,
+            "short_name": null,
+            "featured": false
+          }
+        ],
+        "job_post_date": "Aug 17, 2026",
+        "japanese_level": null,
+        "japanese_level_enum": "japanese_level_business_level",
+        "is_internship": false,
+        "is_japanese_only": false,
+        "published_at": "2026-08-18T09:14:22.000Z",
+        "position": 1,
+        "updated_at": "2026-08-18T02:14:32.000Z",
+        "remote_level": "remote_level_partial",
+        "candidate_location": "candidate_location_anywhere",
+        "company": {
+          "id": 1464,
+          "name": "Kanaria Tech",
+          "slug": "kanaria-tech",
+          "logo_url": "admin_uploads/kanaria-tech-ozy1d.png",
+          "location": "Tokyo",
+          "created_at": "2026-07-08T05:32:37.000Z",
+          "published": true,
+          "updated_at": "2026-08-18T02:18:50.000Z",
+          "published_at": "2026-08-18T09:08:27.000Z",
+          "is_home_published": true,
+          "home_rating": null,
+          "short_description": ""
+        }
+      }
+    },
+    {
+      "id": "3559",
+      "type": "job_lite",
+      "attributes": {
+        "id": 3559,
+        "title": "Software Engineer",
+        "slug": "buildio-software-engineer---buildio-qek024",
+        "intro": null,
+        "technologies": null,
+        "location": "Tokyo",
+        "application_email": "",
+        "salary_min": 5000000,
+        "salary_max": 9000000,
+        "application_url": "https://jobs.ashbyhq.com/aiand/3f5c484a-fa6c-4a28-9332-3439997a679d?utm_source=0q4qXKXj6E",
+        "skills": [
+          {
+            "name": "K8s",
+            "system_name": "k8s",
+            "position": 10,
+            "short_name": null,
+            "featured": false
+          },
+          {
+            "name": "Web / Full-stack",
+            "system_name": "full-stack",
+            "position": null,
+            "short_name": "Web",
+            "featured": true
+          },
+          {
+            "name": "Engineering",
+            "system_name": "engineering",
+            "position": 10,
+            "short_name": null,
+            "featured": true
+          },
+          {
+            "name": "CI/CD",
+            "system_name": "ci/cd",
+            "position": 10,
+            "short_name": null,
+            "featured": false
+          },
+          {
+            "name": "Rails",
+            "system_name": "rails",
+            "position": 10,
+            "short_name": "",
+            "featured": true
+          }
+        ],
+        "job_post_date": "Jul 30, 2026",
+        "japanese_level": null,
+        "japanese_level_enum": "japanese_level_not_required",
+        "is_internship": false,
+        "is_japanese_only": false,
+        "published_at": "2026-08-03T09:43:59.000Z",
+        "position": 1,
+        "updated_at": "2026-08-20T02:09:26.000Z",
+        "remote_level": "remote_level_partial",
+        "candidate_location": "candidate_location_japan_only",
+        "company": {
+          "id": 1468,
+          "name": "Build.io",
+          "slug": "build-io",
+          "logo_url": "auto/build-io-inc-lt2pZzkY-20260729-051415.png",
+          "location": "Tokyo",
+          "created_at": "2026-07-27T06:53:54.000Z",
+          "published": true,
+          "updated_at": "2026-08-20T02:09:26.000Z",
+          "published_at": "2026-08-03T09:15:16.000Z",
+          "is_home_published": true,
+          "home_rating": null,
+          "short_description": ""
+        }
+      }
+    }
+  ]
+}

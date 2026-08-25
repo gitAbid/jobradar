@@ -6,6 +6,7 @@ import {
   normalizeBdjobs,
   normalizeGreenhouse,
   normalizeHimalayas,
+  normalizeJapanDev,
   normalizeRemoteOk,
   normalizeRemotive,
   normalizeSmartRecruiters,
@@ -15,8 +16,9 @@ import {
   detectVisaSponsorship,
   detectRemoteScope,
   idFromUrl,
+  parseJapanDevDetail,
 } from "@/lib/adapters/normalize";
-import { parseEasyJobs, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, filterTechUrls } from "@/lib/adapters/scrape";
+import { parseEasyJobs, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
 import { getDb } from "@/db";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
@@ -211,6 +213,8 @@ async function fetchScraped(
   let listings: NormalizedListing[];
   if (host.endsWith("easy.jobs")) {
     listings = parseEasyJobs(await fetchText(board.url), board.url);
+  } else if (host.endsWith("tokyodev.com")) {
+    listings = await fetchTokyoDev(board);
   } else if (host.endsWith("nextjobz.com.bd")) {
     listings = await fetchNextJobz(board);
   } else if (host === "career.cefalo.com") {
@@ -242,6 +246,69 @@ async function fetchScraped(
     ...l,
     company: l.company || board.name.replace(/ \(careers\)$/i, ""),
   }));
+}
+
+/**
+ * TokyoDev's listing page is server-rendered and fetchable without a browser
+ * (Cloudflare only guards /api/* and detail pages). Descriptions only exist
+ * on detail pages, which DO require headless Chromium — enrich up to 20 new
+ * jobs per refresh by extracting the JSON-LD JobPosting each page embeds.
+ */
+async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const listings = parseTokyoDev(await fetchText(board.url));
+
+  const db = getDb();
+  const knownEnriched = new Set(
+    (
+      db
+        .prepare(
+          "SELECT external_id FROM listings WHERE board_id = ? AND skills != '[]'",
+        )
+        .all(board.id) as { external_id: string }[]
+    ).map((r) => r.external_id),
+  );
+
+  const { renderPage } = await import("@/lib/adapters/browser");
+  let enriched = 0;
+  for (const l of listings) {
+    if (enriched >= 20) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const detail = parseTokyoDevDetail(await renderPage(l.url, 3500));
+      if (!detail) continue;
+      l.description = detail.description;
+      if (detail.postedAt) l.postedAt = detail.postedAt;
+      if (detail.location) l.location = `${detail.location}, Japan`;
+      enriched++;
+    } catch {
+      // Cloudflare challenge or timeout — try again next refresh
+    }
+  }
+  if (enriched > 0) {
+    const upd = db.prepare(
+      "UPDATE listings SET search_text = ?, skills = ?, location = ?, posted_at = ? WHERE board_id = ? AND external_id = ?",
+    );
+    for (const l of listings) {
+      if (!l.description) continue;
+      upd.run(
+        buildSearchText({
+          title: l.title,
+          company: l.company,
+          location: l.location,
+          tags: l.tags,
+          description: l.description,
+        }),
+        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
+        l.location,
+        l.postedAt,
+        board.id,
+        l.externalId,
+      );
+    }
+    console.log(`[jobradar] tokyodev: enriched ${enriched} descriptions via detail pages`);
+  }
+
+  return listings;
 }
 
 /**
@@ -293,6 +360,7 @@ async function fetchNextJobz(
 async function fetchApiListings(board: Pick<Board, "id" | "name" | "type" | "url">): Promise<NormalizedListing[]> {
   if (board.name === "Arbeitnow") return fetchArbeitnow();
   if (board.name === "BDJobs IT") return fetchBdjobs(board);
+  if (board.name === "JapanDev") return fetchJapanDev(board);
 
   // URL-pattern dispatch for platforms hosting many companies
   const host = new URL(board.url).host;
@@ -344,6 +412,79 @@ async function fetchArbeitnow(): Promise<NormalizedListing[]> {
     }
     if (fresh === 0) break; // ran past the end
   }
+  return all;
+}
+
+/**
+ * JapanDev web API — returns only the latest ~20 listings, no pagination.
+ * Plenty for a refresh-cadence radar; the list payload has no description,
+ * so new jobs are enriched from their detail endpoints (plain JSON — also
+ * the only source of the explicit sponsors_visas flag). Enrichment is
+ * bounded and skips jobs already processed on earlier refreshes.
+ */
+async function fetchJapanDev(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const base = (() => {
+    try {
+      const u = new URL(board.url);
+      return `${u.origin}${u.pathname}`;
+    } catch {
+      return "https://api.japan-dev.com/api/v1/jobs";
+    }
+  })();
+
+  const all = normalizeJapanDev(await fetchJson(base));
+
+  // ── enrich descriptions + visa flags via detail endpoints ────────────────
+  const db = getDb();
+  const knownEnriched = new Set(
+    (
+      db
+        .prepare(
+          "SELECT external_id FROM listings WHERE board_id = ? AND skills != '[]'",
+        )
+        .all(board.id) as { external_id: string }[]
+    ).map((r) => r.external_id),
+  );
+  let enriched = 0;
+  for (const l of all) {
+    if (l.description.length >= 80 && l.visaSponsorship) continue;
+    if (enriched >= 30) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const detail = parseJapanDevDetail(await fetchJson(`${base}/${l.externalId}`));
+      if (detail.description.length > l.description.length) l.description = detail.description;
+      if (detail.sponsorsVisas !== null) l.visaSponsorship = detail.sponsorsVisas;
+      else if (detail.description) l.visaSponsorship ||= detectVisaSponsorship(detail.description, l.title);
+      enriched++;
+    } catch {
+      // detail fetch failed — keep list-API fields as-is
+    }
+  }
+  // persist enriched text/skills/visa onto existing rows immediately (the
+  // upsert in refresh.ts never overwrites existing rows)
+  if (enriched > 0) {
+    const upd = db.prepare(
+      "UPDATE listings SET search_text = ?, skills = ?, visa_sponsorship = ? WHERE board_id = ? AND external_id = ?",
+    );
+    for (const l of all) {
+      if (l.description.length < 80) continue;
+      upd.run(
+        buildSearchText({
+          title: l.title,
+          company: l.company,
+          location: l.location,
+          tags: l.tags,
+          description: l.description,
+        }),
+        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
+        l.visaSponsorship ? 1 : 0,
+        board.id,
+        l.externalId,
+      );
+    }
+    console.log(`[jobradar] japandev: enriched ${enriched} listings via detail API`);
+  }
+
   return all;
 }
 

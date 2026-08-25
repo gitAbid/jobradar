@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { decodeEntities, parseEasyJobs, parseNextJobzRsc } from "@/lib/adapters/scrape";
+import { decodeEntities, parseEasyJobs, parseNextJobzRsc, parseTokyoDev, parseTokyoDevDetail } from "@/lib/adapters/scrape";
+
+const tokyodevHtml = readFileSync(new URL("./fixtures/tokyodev.html", import.meta.url), "utf8");
 
 const FIXTURE = `
 <html><body>
@@ -85,5 +88,58 @@ describe("decodeEntities", () => {
     expect(decodeEntities("Java &amp; Spring &#8212; it&#039;s great")).toBe(
       "Java & Spring — it's great",
     );
+  });
+});
+
+describe("parseTokyoDev", () => {
+  it("parses jobs grouped by company with tags and remote flags", () => {
+    const listings = parseTokyoDev(tokyodevHtml);
+    expect(listings).toHaveLength(3);
+
+    const seo = listings.find((l) => l.externalId === "metanomaly/seo-engineer")!;
+    expect(seo.title).toBe("SEO Engineer");
+    expect(seo.company).toBe("Metanomaly"); // from the company group header
+    expect(seo.isRemote).toBe(true); // "Partially remote"
+    expect(seo.visaSponsorship).toBe(true); // "Apply from abroad"
+    expect(seo.tags).toContain("No Japanese required");
+    expect(seo.tags).toContain("Frontend");
+    expect(seo.url).toBe("https://www.tokyodev.com/companies/metanomaly/jobs/seo-engineer");
+
+    const fullstack = listings.find((l) => l.externalId === "metanomaly/fullstack-engineer-growth")!;
+    expect(fullstack.isRemote).toBe(true); // "Fully remote"
+    expect(fullstack.visaSponsorship).toBe(false);
+    expect(fullstack.tags).toContain("¥8M ~ ¥12M"); // salary tag decoded from entity
+    expect(fullstack.tags).toContain("Ruby on Rails");
+
+    const backend = listings.find((l) => l.externalId === "paypay/backend-engineer")!;
+    expect(backend.isRemote).toBe(false); // "No remote" excluded from tags
+    expect(backend.company).toBe("PayPay");
+    expect(backend.location).toBe("Japan");
+    expect(backend.tags).toContain("Japan residents only");
+    expect(backend.tags).toContain("Business Japanese");
+    expect(backend.tags).not.toContain("No remote");
+  });
+
+  it("throws when the page has no job cards", () => {
+    expect(() => parseTokyoDev("<html><body>maintenance</body></html>")).toThrow();
+  });
+});
+
+describe("parseTokyoDevDetail", () => {
+  const DETAIL_HTML = `<html><head>
+    <script type="application/ld+json">{"@context":"https://schema.org/","@type":"WebSite","name":"TokyoDev"}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org/","@type":"JobPosting","title":"Backend Engineer","description":"\u003cp\u003eBuild \u003cb\u003epayments\u003c/b\u003e systems. Visa sponsorship available.\u003c/p\u003e","datePosted":"2026-01-06T14:40:49.002+09:00","jobLocation":{"@type":"Place","address":{"@type":"PostalAddress","addressLocality":"Minato-ku","addressRegion":"Tokyo","addressCountry":"JP"}}}</script>
+  </head><body>job page</body></html>`;
+
+  it("extracts description, posting date and location from the JobPosting JSON-LD", () => {
+    const detail = parseTokyoDevDetail(DETAIL_HTML);
+    expect(detail).not.toBeNull();
+    expect(detail!.description).toBe("Build payments systems. Visa sponsorship available.");
+    expect(detail!.postedAt).toBe("2026-01-06T05:40:49.002Z");
+    expect(detail!.location).toBe("Minato-ku, Tokyo");
+  });
+
+  it("returns null when no JobPosting block exists", () => {
+    expect(parseTokyoDevDetail("<html><body>challenge page</body></html>")).toBeNull();
   });
 });

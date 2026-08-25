@@ -298,6 +298,104 @@ export function normalizeSmartRecruiters(payload: unknown): NormalizedListing[] 
   });
 }
 
+// ── JapanDev ───────────────────────────────────────────────────────────────
+// GET https://api.japan-dev.com/api/v1/jobs?page=N
+//   → { data: [{ id, type: "job_lite", attributes: {...} }] }  (20/page, newest first)
+// Detail: GET https://api.japan-dev.com/api/v1/jobs/{slug}
+//   → { data: { attributes: { raw_content, sponsors_visas, ... } } }
+//
+// remote_level: remote_level_full_worldwide | remote_level_partial | remote_level_none
+// candidate_location: candidate_location_anywhere | candidate_location_japan_only
+// sponsors_visas (detail only): sponsors_visas_yes | sponsors_visas_no
+
+interface JapanDevSkill {
+  name?: string;
+}
+
+interface JapanDevJob {
+  id?: number | string;
+  title?: string;
+  slug?: string;
+  intro?: string | null;
+  location?: string;
+  salary_min?: number | null;
+  salary_max?: number | null;
+  skills?: JapanDevSkill[];
+  published_at?: string;
+  remote_level?: string;
+  candidate_location?: string;
+  company?: { name?: string; slug?: string; location?: string };
+}
+
+/** JPY salary range formatted like japan-dev.com shows it, e.g. "¥8M ~ ¥12M". */
+function yenRange(min?: number | null, max?: number | null): string | null {
+  if (!min && !max) return null;
+  const fmt = (v?: number | null) => (v ? `¥${Math.round(v / 1e6)}M` : "?");
+  return `${fmt(min)} ~ ${fmt(max)}`;
+}
+
+export function normalizeJapanDev(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { data?: unknown }).data)
+      ? ((payload as { data: Array<{ id?: number | string; attributes?: JapanDevJob }> }).data)
+      : [];
+  return jobs.map((entry) => {
+    const j = entry.attributes ?? {};
+    const slug = String(j.slug ?? idFromUrl(j.title ?? ""));
+    const companySlug = j.company?.slug ? String(j.company.slug) : "";
+    const isRemote = Boolean(j.remote_level) && j.remote_level !== "remote_level_none";
+    const worldwide = j.remote_level === "remote_level_full_worldwide";
+    const japanOnly = j.candidate_location === "candidate_location_japan_only";
+
+    // Location doubles as the remote-scope signal for detectRemoteScope():
+    // "Anywhere" wins for worldwide-remote; Japan-restricted remote roles get
+    // an explicit "(residents only)" marker so they classify as restricted.
+    let location = String(j.location ?? j.company?.location ?? "").trim() || "Japan";
+    if (isRemote && worldwide && j.candidate_location === "candidate_location_anywhere") {
+      location = "Anywhere";
+    } else if (isRemote && japanOnly) {
+      location = `${location}, Japan (residents only)`;
+    }
+
+    const salaryTag = yenRange(j.salary_min, j.salary_max);
+    return {
+      externalId: slug,
+      title: String(j.title ?? "").trim(),
+      company: String(j.company?.name ?? "").trim(),
+      location,
+      isRemote,
+      visaSponsorship: false, // detail enrichment sets this from sponsors_visas
+      tags: [
+        ...(Array.isArray(j.skills) ? j.skills.map((s) => String(s.name ?? "")).filter(Boolean) : []),
+        ...(salaryTag ? [salaryTag] : []),
+      ].slice(0, 10),
+      url: companySlug
+        ? `https://japan-dev.com/jobs/${companySlug}/${slug}`
+        : `https://japan-dev.com/jobs/${slug}`,
+      postedAt: toIsoDate(j.published_at),
+      description: stripHtml(String(j.intro ?? "")),
+    } satisfies NormalizedListing;
+  });
+}
+
+export interface JapanDevDetail {
+  description: string;
+  /** yes/no from the sponsors_visas enum; null when absent/unrecognized */
+  sponsorsVisas: boolean | null;
+}
+
+export function parseJapanDevDetail(payload: unknown): JapanDevDetail {
+  const attrs =
+    typeof payload === "object" && payload !== null
+      ? ((payload as { data?: { attributes?: Record<string, unknown> } }).data?.attributes ?? {})
+      : {};
+  const sv = attrs.sponsors_visas;
+  return {
+    description: stripHtml(String(attrs.raw_content ?? "")),
+    sponsorsVisas: sv === "sponsors_visas_yes" ? true : sv === "sponsors_visas_no" ? false : null,
+  };
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const VISA_RE = /(visa\s*sponsor|work\s*permit|relocation\s*(package|support|assistance)|relocat(e|ion)\b)/i;
