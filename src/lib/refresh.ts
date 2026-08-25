@@ -1,6 +1,6 @@
 import { getDb, rowToBoard } from "@/db";
 import { fetchBoardListings } from "@/lib/adapters";
-import { sanitizeTags } from "@/lib/adapters/normalize";
+import { sanitizeTags, capDescription } from "@/lib/adapters/normalize";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
 import type { Board, NormalizedListing } from "@/lib/types";
@@ -79,8 +79,8 @@ function upsertListings(boardId: number, listings: NormalizedListing[]): number 
     INSERT INTO listings (
       board_id, external_id, title, company, location,
       is_remote, visa_sponsorship, remote_scope, tags, skills, url, posted_at,
-      fetched_at, status, user_tags, search_text
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '[]', ?)
+      fetched_at, status, user_tags, search_text, description
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '[]', ?, ?)
     ON CONFLICT (board_id, external_id) DO NOTHING
   `);
   let inserted = 0;
@@ -108,6 +108,7 @@ function upsertListings(boardId: number, listings: NormalizedListing[]): number 
         tags: l.tags,
         description: l.description,
       }),
+      capDescription(l.description),
     );
     inserted += Number(res.changes);
   }
