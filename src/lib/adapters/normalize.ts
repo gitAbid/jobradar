@@ -507,6 +507,14 @@ export function stripHtml(html: string): string {
     .trim();
 }
 
+/** Hard cap on stored description length, to bound list-page payloads (PAGE_SIZE = 20). */
+export const MAX_DESCRIPTION_LENGTH = 20_000;
+
+/** Truncate an over-long description; pass short ones through unchanged. */
+export function capDescription(text: string): string {
+  return text.length > MAX_DESCRIPTION_LENGTH ? text.slice(0, MAX_DESCRIPTION_LENGTH) : text;
+}
+
 function toIsoDate(input: unknown): string | null {
   if (input == null) return null;
   if (typeof input === "number") {

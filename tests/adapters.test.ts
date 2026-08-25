@@ -15,6 +15,7 @@ import {
   normalizeHimalayas,
   normalizeRemoteOk,
   normalizeRemotive,
+  capDescription,
 } from "@/lib/adapters/normalize";
 import remoteOkFixture from "./fixtures/remoteok.json";
 import remotiveFixture from "./fixtures/remotive.json";
@@ -329,6 +330,13 @@ describe("helpers", () => {
   it("derives stable ids from urls", () => {
     expect(idFromUrl("https://a/x")).toBe(idFromUrl("https://a/x"));
     expect(idFromUrl("https://a/x")).not.toBe(idFromUrl("https://a/y"));
+  });
+
+  it("caps over-long descriptions and passes short ones through", () => {
+    expect(capDescription("short")).toBe("short");
+    const long = "a".repeat(25_000);
+    expect(capDescription(long)).toHaveLength(20_000);
+    expect(capDescription(long)).toBe("a".repeat(20_000));
   });
 });
 
