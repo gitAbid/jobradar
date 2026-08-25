@@ -166,17 +166,17 @@ function migrate(db: DatabaseSync) {
            description      TEXT NOT NULL DEFAULT '',
            UNIQUE (board_id, external_id)
          )`);
-        db.exec(`
-          INSERT INTO listings_fixed (
-            id, board_id, external_id, title, company, location,
-            is_remote, visa_sponsorship, remote_scope, tags, skills, url,
-            posted_at, fetched_at, status, user_tags, search_text, description
-          )
-          SELECT id, board_id, external_id, title, company, location,
-                 is_remote, visa_sponsorship, remote_scope, tags, skills, url,
-                 posted_at, fetched_at, status, user_tags, search_text, description
-          FROM listings
-        `);
+         // Only copy `description` when the source table already has it
+         // (a pre-feature DB stuck in this broken state doesn't) — otherwise
+         // the SELECT would throw and brick startup.
+         const sourceCols = (
+           db.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>
+         ).map((c) => c.name);
+         const hasDesc = sourceCols.includes("description");
+         const copyCols = hasDesc
+           ? "id, board_id, external_id, title, company, location, is_remote, visa_sponsorship, remote_scope, tags, skills, url, posted_at, fetched_at, status, user_tags, search_text, description"
+           : "id, board_id, external_id, title, company, location, is_remote, visa_sponsorship, remote_scope, tags, skills, url, posted_at, fetched_at, status, user_tags, search_text";
+         db.exec(`INSERT INTO listings_fixed (${copyCols}) SELECT ${copyCols} FROM listings`);
         db.exec("DROP TABLE listings");
         db.exec("ALTER TABLE listings_fixed RENAME TO listings");
         db.exec("CREATE INDEX IF NOT EXISTS idx_listings_board ON listings(board_id)");
