@@ -55,14 +55,19 @@ export function RefreshButton({ soundEnabled }: { soundEnabled: boolean }) {
 
   return (
     <div className="flex items-center gap-2">
-      {note && <span className="text-xs text-emerald-600">{note}</span>}
+      {note && (
+        <span aria-live="polite" className={`rounded-full px-2.5 py-1 text-xs font-semibold ${note === "refresh failed" ? "bg-rose-100 text-rose-800" : "bg-teal-100 text-teal-800"}`}>
+          {note}
+        </span>
+      )}
       <button
+        type="button"
         onClick={refresh}
         disabled={busy || pending}
-        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-3.5 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:bg-teal-50 hover:text-teal-900 disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
       >
         <RefreshCw className={`h-4 w-4 ${busy || pending ? "animate-spin" : ""}`} />
-        Refresh now
+        {busy || pending ? "Refreshing..." : "Refresh now"}
       </button>
     </div>
   );

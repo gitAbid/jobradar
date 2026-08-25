@@ -40,7 +40,7 @@ export function Pagination({ currentPage, totalPages }: Props) {
   };
 
   const navClass =
-    "inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 transition hover:border-slate-400 disabled:pointer-events-none disabled:opacity-40";
+    "inline-flex min-h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500";
 
   return (
     <nav className="flex flex-wrap items-center justify-center gap-1.5 pt-2" aria-label="Pagination">
@@ -64,7 +64,7 @@ export function Pagination({ currentPage, totalPages }: Props) {
           <span
             key={p}
             aria-current="page"
-            className="inline-flex min-w-9 justify-center rounded-lg bg-slate-900 px-2.5 py-1.5 text-sm font-semibold text-white"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl bg-slate-900 px-2.5 text-sm font-semibold text-white"
           >
             {p}
           </span>
@@ -72,7 +72,7 @@ export function Pagination({ currentPage, totalPages }: Props) {
           <Link
             key={p}
             href={hrefFor(p)}
-            className="inline-flex min-w-9 justify-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-600 transition hover:border-slate-400"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             {p}
           </Link>
