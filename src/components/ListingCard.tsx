@@ -1,4 +1,4 @@
-import { Heart, Send, Eye, ExternalLink, MapPin, Building2, Globe, Plane, Star } from "lucide-react";
+import { Heart, Send, Eye, ExternalLink, MapPin, Building2, Globe, Plane, Star, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { setListingStatusAction, toggleFollowCompanyAction } from "@/app/actions";
 import type { FilterableListing } from "@/lib/types";
@@ -179,6 +179,18 @@ export function ListingCard({
             </span>
           ))}
         </div>
+      )}
+
+      {listing.description && (
+        <details className="group/desc rounded-xl border border-slate-200 bg-slate-50/60">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
+            <ChevronDown className="h-4 w-4 transition-transform group-open/desc:rotate-180" />
+            Description
+          </summary>
+          <div className="max-h-96 overflow-y-auto whitespace-pre-line px-3 pb-3 text-[13px] leading-relaxed text-slate-700">
+            <Highlight text={listing.description} keywords={matched} />
+          </div>
+        </details>
       )}
 
       <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
