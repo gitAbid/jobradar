@@ -106,3 +106,50 @@ export function revokeApiKey(db: DatabaseSync, id: number): boolean {
     .run(new Date().toISOString(), id);
   return Number(res.changes) > 0;
 }
+
+// ── Request authentication ──────────────────────────────────────────────────
+
+export type AuthResult =
+  | { ok: true; key: ApiKeyRecord }
+  | { ok: false; status: 401 | 403 };
+
+/** Usage stats are best-effort: written at most once per key per 60s. */
+const USAGE_THROTTLE_MS = 60_000;
+const lastUsageWrite = new WeakMap<object, Map<number, number>>();
+
+function recordUsage(db: DatabaseSync, keyId: number): void {
+  const now = Date.now();
+  const perDb = lastUsageWrite.get(db) ?? new Map<number, number>();
+  if (now - (perDb.get(keyId) ?? 0) < USAGE_THROTTLE_MS) return;
+  perDb.set(keyId, now);
+  lastUsageWrite.set(db, perDb);
+  try {
+    db.prepare(
+      "UPDATE api_keys SET last_used_at = ?, request_count = request_count + 1 WHERE id = ?",
+    ).run(new Date(now).toISOString(), keyId);
+  } catch {
+    // stats must never break a request
+  }
+}
+/**
+ * Verifies `Authorization: Bearer <key>` (primary) or `x-api-key: <key>`.
+ * Records usage for valid, non-revoked keys.
+ */
+export function authenticateApiKey(request: Request, db: DatabaseSync): AuthResult {
+  const header = request.headers.get("authorization");
+  const presented = header?.toLowerCase().startsWith("bearer ")
+    ? header.slice(7).trim()
+    : (request.headers.get("x-api-key")?.trim() || null);
+  if (!presented) return { ok: false, status: 401 };
+
+  ensureSchema(db);
+  const row = db
+    .prepare("SELECT * FROM api_keys WHERE key_hash = ?")
+    .get(hashKey(presented)) as unknown as ApiKeyRow | undefined;
+  if (!row) return { ok: false, status: 401 };
+
+  const record = rowToRecord(row);
+  if (record.revokedAt) return { ok: false, status: 403 };
+  recordUsage(db, record.id);
+  return { ok: true, key: record };
+}
