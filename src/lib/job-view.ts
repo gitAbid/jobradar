@@ -11,7 +11,7 @@ import type { FilterableListing } from "@/lib/types";
 
 export const PAGE_SIZE = 20;
 
-interface RawParams {
+export interface RawParams {
   status?: string;
   remote?: string;
   visa?: string;
@@ -59,7 +59,9 @@ export function buildJobView(
   pool: FilterableListing[],
   sp: RawParams,
   globalKeywords: string[],
+  opts: { pageSize?: number } = {},
 ): JobView {
+  const pageSize = opts.pageSize ?? PAGE_SIZE;
   const showAll = sp.showAll === "1";
 
   const selections: Record<FacetParam, string[]> = {
@@ -166,7 +168,7 @@ export function buildJobView(
   });
 
   const totalVisible = unique.length;
-  const totalPages = Math.max(1, Math.ceil(totalVisible / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalVisible / pageSize));
   const requestedPage = Number.parseInt(sp.page ?? "1", 10);
   const currentPage = Math.min(
     Math.max(Number.isNaN(requestedPage) ? 1 : requestedPage, 1),
@@ -174,7 +176,7 @@ export function buildJobView(
   );
 
   const entries: JobEntry[] = unique
-    .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+    .slice((currentPage - 1) * pageSize, currentPage * pageSize)
     .map((listing) => ({
       listing,
       matched: matchedKeywords(listing, globalKeywords),
