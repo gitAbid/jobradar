@@ -1587,3 +1587,29 @@ Kill the dev server. Report results; the feature is complete. No further commit 
 - **Spec coverage:** endpoints (list/detail/meta) → Task 6; auth headers + 401/403/400/404 → Tasks 3/6; hashed keys + shown-once + revoke + last-used/counts → Tasks 2/3; management UI + nav → Task 7; CORS/no-store → Task 6; full-dataset-minus-hidden semantics (`globalKeywords = []`, hidden excluded by pipeline) → Task 6; pageSize bounds (1–200, default 25) → Task 4; dedupe + page clamp inherited from `buildJobView` → Tasks 1/6.
 - **Placeholders:** none — every code step is complete.
 - **Type consistency:** `ApiKeyRecord` used by keys.ts and page.tsx; `ParsedJobsQuery` consumed in jobs.ts; `PublicJob` from serialize.ts used by jobs.ts; `RawParams` exported in Task 1 before query.ts (Task 4) imports it; `corsPreflight`/`apiError` defined before route files re-export them.
+
+---
+
+## ADDENDUM (2026-09-12, mid-execution): pivot to the Postgres migration
+
+While Tasks 1–5 were executing, the working tree gained a large concurrent
+rewrite: the persistence layer moved from `node:sqlite` to Postgres
+(`postgres.js` against Supabase, `q`/`qOne`/`run` helpers in `src/db/index.ts`,
+async module-level DB functions). The plan's SQLite-specific steps are amended:
+
+- **Pure units unchanged:** `job-view` pageSize, `query.ts`, `serialize.ts`
+  (Tasks 1, 4, 5) stand as committed.
+- **Keys:** `src/lib/api/keys.ts` becomes a pure core over a small `KeyStore`
+  interface (hashing, generation, auth semantics, usage throttle) with an
+  `InMemoryKeyStore` used by tests; the Postgres adapter lives in
+  `src/lib/api/keys-store.ts` using `q`/`qOne`/`run`. The `api_keys` DDL is
+  feature-owned and lazily applied (one `create table if not exists`), keeping
+  hands off the in-flight `src/db/index.ts`; RLS is enabled on the table
+  (credentials must not be readable by anon/authenticated roles; the server's
+  own connection is unaffected).
+- **Endpoints:** builders take `(request, store, pool)` and are async;
+  `loadListingsPool()` mirrors the migrated dashboard query via `q` +
+  `rowToListing`. Route files await the pool and pass the singleton store.
+- **Tests:** endpoint tests run over synthetic pools + the in-memory store;
+  the SQLite `tests/helpers/test-db.ts` is dropped. The Postgres adapter is
+  verified by the live smoke test (Task 8).
