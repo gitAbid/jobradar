@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, MapPin, Radar, Send, SlidersHorizontal, Star } from "lucide-react";
+import { KeyRound, LayoutDashboard, MapPin, Radar, Send, SlidersHorizontal, Star } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { isNavLinkActive } from "@/lib/navigation";
@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: "/following", label: "Following", icon: Star },
   { href: "/applied", label: "Applied", icon: Send },
   { href: "/boards", label: "Boards", icon: SlidersHorizontal },
+  { href: "/api-keys", label: "API Keys", icon: KeyRound },
 ] as const;
 
 function NavItem({
