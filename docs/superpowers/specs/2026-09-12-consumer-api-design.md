@@ -1,7 +1,8 @@
 # Consumer REST API & API Key Management — Design
 
 **Date:** 2026-09-12
-**Status:** Approved (autonomous session — recommended defaults chosen; see "Open decisions")
+**Status:** Implemented (see plan addendum for the mid-flight Postgres pivot —
+storage landed on `postgres.js`/Supabase via a `KeyStore` port, not `node:sqlite`)
 
 ## Goal
 
