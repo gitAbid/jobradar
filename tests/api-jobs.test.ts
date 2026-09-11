@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
 import { parseJobsQuery } from "@/lib/api/query";
+import { toPublicJob } from "@/lib/api/serialize";
+import { countryFacetValue } from "@/lib/facets";
 import type { FilterableListing } from "@/lib/types";
 
 /** Factory with sane defaults; tests override what they care about. */
@@ -88,5 +90,39 @@ describe("parseJobsQuery", () => {
 
   it("ignores unknown params", () => {
     expect(parseJobsQuery(`${BASE}?utm_source=app`).ok).toBe(true);
+  });
+});
+
+describe("toPublicJob", () => {
+  it("maps the public field allowlist and computes country", () => {
+    const source = makeListing({ remoteScope: "restricted" });
+    const dto = toPublicJob(source);
+
+    expect(dto).toEqual({
+      id: 1,
+      source: "RemoteOK",
+      externalId: "ext-1",
+      title: "Java Engineer",
+      company: "Acme",
+      location: "Remote",
+      country: countryFacetValue(source),
+      isRemote: true,
+      remoteScope: "restricted",
+      visaSponsorship: false,
+      tags: ["java"],
+      skills: ["Java"],
+      url: "https://example.com/1",
+      postedAt: "2026-09-10T00:00:00Z",
+      deadline: null,
+      fetchedAt: "2026-09-12T00:00:00Z",
+      description: "Great job",
+    });
+  });
+
+  it("never leaks personal/workflow fields", () => {
+    const dto = toPublicJob(makeListing());
+    for (const forbidden of ["status", "userTags", "searchText", "boardFilterKeywords", "boardId"]) {
+      expect(dto).not.toHaveProperty(forbidden);
+    }
   });
 });
