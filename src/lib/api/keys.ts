@@ -94,7 +94,7 @@ function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
 export function listApiKeys(db: DatabaseSync): ApiKeyRecord[] {
   ensureSchema(db);
   return (
-    db.prepare("SELECT * FROM api_keys ORDER BY id DESC").all() as ApiKeyRow[]
+    db.prepare("SELECT * FROM api_keys ORDER BY id DESC").all() as unknown as ApiKeyRow[]
   ).map(rowToRecord);
 }
 
