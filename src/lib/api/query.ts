@@ -59,5 +59,10 @@ export function parseJobsQuery(url: string): ParsedJobsQuery {
     return { ok: false, error: filters.error.issues[0]?.message ?? "invalid filter params" };
   }
 
-  return { ok: true, params: filters.data as RawParams, ...paging.data };
+  // buildJobView reads sp.page for clamping — keep it in sync with the
+  // validated page number the API returns in its envelope.
+  const params = filters.data as RawParams;
+  params.page = String(paging.data.page);
+
+  return { ok: true, params, ...paging.data };
 }

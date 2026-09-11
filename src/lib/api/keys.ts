@@ -1,28 +1,4 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
-
-// ── Schema (feature-owned) ──────────────────────────────────────────────────
-// The consumer API owns its table and provisions it lazily, so the core
-// migrate() in src/db/index.ts stays untouched by this feature.
-
-const ensured = new WeakSet<object>();
-
-function ensureSchema(db: DatabaseSync): void {
-  if (ensured.has(db)) return;
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS api_keys (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      name          TEXT NOT NULL,
-      key_hash      TEXT NOT NULL UNIQUE,
-      prefix        TEXT NOT NULL,
-      created_at    TEXT NOT NULL,
-      last_used_at  TEXT,
-      request_count INTEGER NOT NULL DEFAULT 0,
-      revoked_at    TEXT
-    );
-  `);
-  ensured.add(db);
-}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -37,27 +13,93 @@ export interface ApiKeyRecord {
   revokedAt: string | null;
 }
 
+/**
+ * Storage port for API keys. The pure core below (generation, hashing, auth
+ * semantics) is tested against InMemoryKeyStore; production uses the Postgres
+ * adapter in src/lib/api/keys-store.ts.
+ */
+export interface KeyStore {
+  insert(key: { name: string; keyHash: string; prefix: string; createdAt: string }): Promise<number>;
+  list(): Promise<ApiKeyRecord[]>;
+  /** Marks revoked; resolves false when unknown or already revoked. */
+  revoke(id: number, revokedAt: string): Promise<boolean>;
+  findByHash(keyHash: string): Promise<ApiKeyRecord | null>;
+  /** Best-effort usage stats; must never throw into the request path. */
+  recordUsage(id: number, usedAt: string): Promise<void>;
+}
+
+/** Reference in-memory store — used by the test suite. */
+export class InMemoryKeyStore implements KeyStore {
+  private rows: ApiKeyRecord[] = [];
+  private hashes = new Map<number, string>();
+  private nextId = 1;
+
+  async insert(key: { name: string; keyHash: string; prefix: string; createdAt: string }): Promise<number> {
+    const id = this.nextId++;
+    this.rows.push({
+      id,
+      name: key.name,
+      prefix: key.prefix,
+      createdAt: key.createdAt,
+      lastUsedAt: null,
+      requestCount: 0,
+      revokedAt: null,
+    });
+    this.hashes.set(id, key.keyHash);
+    return id;
+  }
+
+  async list(): Promise<ApiKeyRecord[]> {
+    // newest first, matching the Postgres adapter's `order by id desc`
+    return this.rows
+      .map((r) => ({ ...r }))
+      .sort((a, b) => b.id - a.id);
+  }
+
+  async revoke(id: number, revokedAt: string): Promise<boolean> {
+    const row = this.rows.find((r) => r.id === id && r.revokedAt === null);
+    if (!row) return false;
+    row.revokedAt = revokedAt;
+    return true;
+  }
+
+  async findByHash(keyHash: string): Promise<ApiKeyRecord | null> {
+    for (const r of this.rows) {
+      if (this.hashes.get(r.id) === keyHash) return { ...r };
+    }
+    return null;
+  }
+
+  async recordUsage(id: number, usedAt: string): Promise<void> {
+    const row = this.rows.find((r) => r.id === id);
+    if (row) {
+      row.lastUsedAt = usedAt;
+      row.requestCount += 1;
+    }
+  }
+}
+
 // ── Generation & hashing ────────────────────────────────────────────────────
 
 export function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
 
-// ── CRUD ────────────────────────────────────────────────────────────────────
-
-export function createApiKey(
-  db: DatabaseSync,
+export async function createApiKey(
+  store: KeyStore,
   name: string,
-): { key: ApiKeyRecord; plaintext: string } {
-  ensureSchema(db);
+): Promise<{ key: ApiKeyRecord; plaintext: string }> {
   const plaintext = `jrk_${randomBytes(32).toString("base64url")}`;
   const createdAt = new Date().toISOString();
-  const res = db
-    .prepare("INSERT INTO api_keys (name, key_hash, prefix, created_at) VALUES (?, ?, ?, ?)")
-    .run(name, hashKey(plaintext), plaintext.slice(0, 12), createdAt);
+  const id = await store.insert({
+    name,
+    keyHash: hashKey(plaintext),
+    prefix: plaintext.slice(0, 12),
+    createdAt,
+  });
   return {
     key: {
-      id: Number(res.lastInsertRowid),
+      id,
       name,
       prefix: plaintext.slice(0, 12),
       createdAt,
@@ -69,42 +111,12 @@ export function createApiKey(
   };
 }
 
-interface ApiKeyRow {
-  id: number;
-  name: string;
-  prefix: string;
-  created_at: string;
-  last_used_at: string | null;
-  request_count: number;
-  revoked_at: string | null;
+export function listApiKeys(store: KeyStore): Promise<ApiKeyRecord[]> {
+  return store.list();
 }
 
-function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
-  return {
-    id: r.id,
-    name: r.name,
-    prefix: r.prefix,
-    createdAt: r.created_at,
-    lastUsedAt: r.last_used_at,
-    requestCount: r.request_count,
-    revokedAt: r.revoked_at,
-  };
-}
-
-export function listApiKeys(db: DatabaseSync): ApiKeyRecord[] {
-  ensureSchema(db);
-  return (
-    db.prepare("SELECT * FROM api_keys ORDER BY id DESC").all() as unknown as ApiKeyRow[]
-  ).map(rowToRecord);
-}
-
-/** Marks a key revoked; false when unknown or already revoked. */
-export function revokeApiKey(db: DatabaseSync, id: number): boolean {
-  ensureSchema(db);
-  const res = db
-    .prepare("UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-    .run(new Date().toISOString(), id);
-  return Number(res.changes) > 0;
+export function revokeApiKey(store: KeyStore, id: number): Promise<boolean> {
+  return store.revoke(id, new Date().toISOString());
 }
 
 // ── Request authentication ──────────────────────────────────────────────────
@@ -117,39 +129,29 @@ export type AuthResult =
 const USAGE_THROTTLE_MS = 60_000;
 const lastUsageWrite = new WeakMap<object, Map<number, number>>();
 
-function recordUsage(db: DatabaseSync, keyId: number): void {
+async function recordUsage(store: KeyStore, keyId: number): Promise<void> {
   const now = Date.now();
-  const perDb = lastUsageWrite.get(db) ?? new Map<number, number>();
-  if (now - (perDb.get(keyId) ?? 0) < USAGE_THROTTLE_MS) return;
-  perDb.set(keyId, now);
-  lastUsageWrite.set(db, perDb);
-  try {
-    db.prepare(
-      "UPDATE api_keys SET last_used_at = ?, request_count = request_count + 1 WHERE id = ?",
-    ).run(new Date(now).toISOString(), keyId);
-  } catch {
-    // stats must never break a request
-  }
+  const perStore = lastUsageWrite.get(store) ?? new Map<number, number>();
+  if (now - (perStore.get(keyId) ?? 0) < USAGE_THROTTLE_MS) return;
+  perStore.set(keyId, now);
+  lastUsageWrite.set(store, perStore);
+  await store.recordUsage(keyId, new Date(now).toISOString());
 }
+
 /**
  * Verifies `Authorization: Bearer <key>` (primary) or `x-api-key: <key>`.
  * Records usage for valid, non-revoked keys.
  */
-export function authenticateApiKey(request: Request, db: DatabaseSync): AuthResult {
+export async function authenticateApiKey(request: Request, store: KeyStore): Promise<AuthResult> {
   const header = request.headers.get("authorization");
   const presented = header?.toLowerCase().startsWith("bearer ")
     ? header.slice(7).trim()
     : (request.headers.get("x-api-key")?.trim() || null);
   if (!presented) return { ok: false, status: 401 };
 
-  ensureSchema(db);
-  const row = db
-    .prepare("SELECT * FROM api_keys WHERE key_hash = ?")
-    .get(hashKey(presented)) as unknown as ApiKeyRow | undefined;
-  if (!row) return { ok: false, status: 401 };
-
-  const record = rowToRecord(row);
+  const record = await store.findByHash(hashKey(presented));
+  if (!record) return { ok: false, status: 401 };
   if (record.revokedAt) return { ok: false, status: 403 };
-  recordUsage(db, record.id);
+  await recordUsage(store, record.id);
   return { ok: true, key: record };
 }
