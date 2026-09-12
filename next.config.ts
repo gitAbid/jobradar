@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     DATABASE_URL: process.env.DATABASE_URL,
     CRON_SECRET: process.env.CRON_SECRET,
     REED_API_KEY: process.env.REED_API_KEY,
+    BROWSERLESS_WS_URL: process.env.BROWSERLESS_WS_URL,
   },
 };
 

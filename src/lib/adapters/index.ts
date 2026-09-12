@@ -33,6 +33,15 @@ const TIMEOUT_MS = 15_000;
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) JobRadar/1.0 (+https://localhost)";
 
+/**
+ * Wall-clock budget for browser-based detail enrichment. Serverless
+ * refreshes cap at 60s (maxDuration), so enrichment must fit inside a safe
+ * slice of one invocation; local runs are uncapped.
+ */
+function enrichStopAt(): number {
+  return process.env.VERCEL === "1" ? Date.now() + 35_000 : Number.POSITIVE_INFINITY;
+}
+
 /** Standard enrichment payload persisted back onto stored rows. */
 function toPatch(l: NormalizedListing, extra: Partial<EnrichPatch> = {}): EnrichPatch {
   return {
@@ -354,8 +363,9 @@ async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise
 
   const { renderPage } = await import("@/lib/adapters/browser");
   let enriched = 0;
+  const stopAt = enrichStopAt();
   for (const l of listings) {
-    if (enriched >= 20) break;
+    if (enriched >= 20 || Date.now() >= stopAt) break;
     if (knownEnriched.has(l.externalId)) continue;
     try {
       const detail = parseTokyoDevDetail(await renderPage(l.url, 3500));
@@ -643,16 +653,17 @@ async function fetchBdjobs(
   }
 
   // ── enrich thin descriptions via detail pages ─────────────────────────
-  // The list API returns no real description; the full JD only renders on
-  // jobdetails.asp (Angular). Enrich up to 50 per refresh via headless
-  // Chromium; rows already carrying skills are skipped so each refresh
-  // advances through the catalog.
+  // The list API returns only a short teaser (often empty); the full JD
+  // renders on jobdetails.asp (Angular). Enrich up to 50 rows per refresh —
+  // empties and thin teasers first — replacing the stored text whenever the
+  // detail page beats it by a margin; rows already carrying skills are
+  // skipped so each refresh advances through the catalog.
   const { renderText } = await import("@/lib/adapters/browser");
   const skillsKnown = await knownEnrichedExternalIds(board.id, "skills");
   let enriched = 0;
+  const stopAt = enrichStopAt();
   for (const l of all) {
-    if (l.description.length >= 80) continue;
-    if (enriched >= 50) break;
+    if (enriched >= 50 || Date.now() >= stopAt) break;
     if (skillsKnown.has(l.externalId)) continue; // already enriched before
     try {
       const text = await renderText(l.url, 3000);

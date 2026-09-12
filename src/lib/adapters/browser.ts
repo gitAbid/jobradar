@@ -2,8 +2,10 @@ import type { Browser } from "playwright";
 
 /**
  * Lazy singleton headless Chromium for scraping JS-rendered career pages.
- * The browser launches on first use and stays alive for the process
- * lifetime; OS reaps it on exit. playwright itself is imported lazily too —
+ * The browser is either a local launch, or — when BROWSERLESS_WS_URL is set
+ * (e.g. a Browserless Cloud-Chrome endpoint) — a remote session connected
+ * over CDP, which is what lets detail enrichment run on serverless where
+ * local Chromium cannot. playwright itself is imported lazily too —
  * importing this module must never fail in environments where the package
  * is unavailable (serverless), so adapters can degrade gracefully.
  */
@@ -14,12 +16,17 @@ const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 
 /**
- * Headless Chromium cannot run on serverless (no browser binaries, read-only
- * FS). Boards that need it degrade to their list-only data via the adapters'
- * per-item try/catch; browser-only boards (Cefalo) surface a board error.
+ * Local headless Chromium cannot run on serverless (no browser binaries,
+ * read-only FS), so it is disabled there — unless BROWSERLESS_WS_URL hands
+ * rendering to a remote browser. JOBRADAR_DISABLE_BROWSER=1 force-disables
+ * rendering everywhere. Boards that need it degrade to their list-only data
+ * via the adapters' per-item try/catch; browser-only boards (Cefalo)
+ * surface a board error.
  */
 export function isHeadlessBrowserAvailable(): boolean {
-  return !(process.env.VERCEL === "1" || process.env.JOBRADAR_DISABLE_BROWSER === "1");
+  if (process.env.JOBRADAR_DISABLE_BROWSER === "1") return false;
+  if (process.env.BROWSERLESS_WS_URL) return true;
+  return process.env.VERCEL !== "1";
 }
 
 function assertBrowserAvailable(): void {
@@ -30,6 +37,8 @@ function assertBrowserAvailable(): void {
 
 async function launchBrowser(): Promise<Browser> {
   const { chromium } = await import("playwright");
+  const remote = process.env.BROWSERLESS_WS_URL;
+  if (remote) return chromium.connectOverCDP(remote);
   return chromium.launch({ headless: true });
 }
 
