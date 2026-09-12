@@ -1,4 +1,4 @@
-import { getDb, rowToListing, listPinnedCountries } from "@/db";
+import { listPinnedCountries, q, rowToListing } from "@/db";
 import { isBangladeshRelevant } from "@/lib/bd";
 import { getGlobalKeywords } from "@/lib/settings";
 import type { FilterableListing } from "@/lib/types";
@@ -31,16 +31,14 @@ export default async function BangladeshPage({
 }) {
   await connection(); // request-time rendering
   const sp = await searchParams;
-  const db = getDb();
-  const globalKeywords = getGlobalKeywords();
-
-  const rows = db
-    .prepare(
-      `SELECT l.*, b.name AS board_name, b.filter_keywords AS board_filter_keywords
-       FROM listings l JOIN boards b ON b.id = l.board_id
-       ORDER BY COALESCE(l.posted_at, l.fetched_at) DESC`,
-    )
-    .all() as Record<string, unknown>[];
+  const [globalKeywords, rows] = await Promise.all([
+    getGlobalKeywords(),
+    q<Record<string, unknown>>(
+      `select l.*, b.name as board_name, b.filter_keywords as board_filter_keywords
+       from listings l join boards b on b.id = l.board_id
+       order by coalesce(l.posted_at, l.fetched_at) desc`,
+    ),
+  ]);
 
   const pool = (
     rows.map((r) => rowToListing(r as never)) as FilterableListing[]
@@ -78,7 +76,7 @@ export default async function BangladeshPage({
       </section>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:gap-6">
-        <FacetSidebar facets={view.facets} pinnedCountries={listPinnedCountries(db).map((n) => n.toLowerCase())} />
+        <FacetSidebar facets={view.facets} pinnedCountries={(await listPinnedCountries()).map((n) => n.toLowerCase())} />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-end justify-between gap-3">

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectRemoteScope,
   detectVisaSponsorship,
+  extractFeedExtras,
   normalizeAirwork,
   normalizeGreenhouse,
   normalizeJapanDev,
@@ -15,11 +16,16 @@ import {
   normalizeHimalayas,
   normalizeRemoteOk,
   normalizeRemotive,
+  normalizeJobicy,
+  normalizeReed,
+  parseReedDetail,
+  reedDateToIso,
   capDescription,
 } from "@/lib/adapters/normalize";
 import remoteOkFixture from "./fixtures/remoteok.json";
 import remotiveFixture from "./fixtures/remotive.json";
 import japanDevFixture from "./fixtures/japandev.json";
+import jobicyFixture from "./fixtures/jobicy.json";
 
 describe("normalizeRemoteOk", () => {
   it("skips the legal-notice element and maps fields", () => {
@@ -258,6 +264,7 @@ describe("normalizeTekarsh", () => {
           workMode: "On-site",
           technicalSkills: "Java, Spring Boot, AWS",
           postedDate: "2026-08-15T10:00:00Z",
+          deadline: "2026-09-30",
           introduction: "<p>Join us</p>",
         },
         { _id: "t2", title: "Closed Role", status: "closed" },
@@ -270,6 +277,7 @@ describe("normalizeTekarsh", () => {
     expect(l.location).toBe("Dhaka");
     expect(l.tags).toContain("Java");
     expect(l.url).toContain("/career/job/senior-software-engineer-java");
+    expect(l.deadline).toBe(new Date("2026-09-30").toISOString());
   });
 });
 
@@ -294,6 +302,19 @@ describe("normalizeSmartRecruiters", () => {
     expect(l.url).toBe(
       "https://jobs.smartrecruiters.com/CraftsmenLtd/743999763868338",
     );
+  });
+
+  it("expands ISO-style lowercase country codes", () => {
+    const listings = normalizeSmartRecruiters({
+      content: [
+        {
+          id: "743999943026464",
+          name: "Junior Software Engineer",
+          location: { city: "Dhaka", country: "bd" },
+        },
+      ],
+    });
+    expect(listings[0].location).toBe("Dhaka, Bangladesh");
   });
 });
 
@@ -396,5 +417,135 @@ describe("parseJapanDevDetail", () => {
       sponsorsVisas: null,
     });
     expect(parseJapanDevDetail({ data: { attributes: { sponsors_visas: "weird" } } }).sponsorsVisas).toBeNull();
+  });
+});
+
+describe("extractFeedExtras", () => {
+  it("extracts location, deadline and remote flag from BD career feed content", () => {
+    const content =
+      "<h1>Business Development Executive (Night Shift &amp; Remote)</h1>" +
+      "<p><strong>Application Deadline: </strong>30 September 2026</p>" +
+      "<p><strong>Department: </strong>Sales</p>" +
+      "<p><strong>Location: </strong>Dhaka</p>" +
+      "<p>We are looking for a motivated representative.</p>";
+    const extras = extractFeedExtras("Business Development Executive (Night Shift & Remote)", content);
+    expect(extras?.location).toBe("Dhaka");
+    expect(extras?.deadline).toBe(new Date("30 September 2026").toISOString());
+    expect(extras?.isRemote).toBe(true);
+  });
+
+  it("keeps office roles non-remote", () => {
+    const content = "<p><strong>Location: </strong>Uttara, Dhaka</p><p>On-site role.</p>";
+    const extras = extractFeedExtras("Business Analyst", content);
+    expect(extras?.location).toBe("Uttara, Dhaka");
+    expect(extras?.isRemote).toBe(false);
+    expect(extras?.deadline).toBeNull();
+  });
+
+  it("returns null for remote-board feeds without location labels", () => {
+    expect(extractFeedExtras("Backend Dev", "<p>Remote job at a startup</p>")).toBeNull();
+  });
+});
+
+describe("normalizeJobicy", () => {
+  it("maps job fields and keeps the full description", () => {
+    const listings = normalizeJobicy(jobicyFixture);
+    expect(listings).toHaveLength(1);
+    const l = listings[0];
+    expect(l.externalId).toBe("152061");
+    expect(l.title).toBe("Backend Java Engineer (US Remote)");
+    expect(l.company).toBe("PerfectServe");
+    expect(l.location).toBe("USA");
+    expect(l.isRemote).toBe(true);
+    expect(l.visaSponsorship).toBe(true); // description mentions visa sponsorship
+    expect(l.tags).toContain("Full-Time");
+    expect(l.postedAt).toBe("2026-08-29T17:27:09.000Z");
+    expect(l.description).toContain("Spring Boot");
+    expect(l.description).not.toContain("<p>");
+    expect(l.url).toContain("jobicy.com/jobs/152061");
+  });
+
+  it("returns [] for payloads without a jobs array", () => {
+    expect(normalizeJobicy({ nope: true })).toEqual([]);
+    expect(normalizeJobicy(null)).toEqual([]);
+  });
+});
+
+describe("normalizeReed", () => {
+  const reedPayload = {
+    totalResults: 42,
+    results: [
+      {
+        jobId: 512345,
+        employerName: "Acme Ltd",
+        jobTitle: "Senior Java Developer",
+        locationName: "London",
+        minimumSalary: 45000,
+        maximumSalary: 60000,
+        currency: "GBP",
+        datePosted: "19/08/2026",
+        jobUrl: "https://www.reed.co.uk/jobs/senior-java-developer/512345",
+      },
+      {
+        jobId: 512346,
+        employerName: "RemoteCorp",
+        jobTitle: "Remote Java Engineer",
+        locationName: "Manchester",
+        minimumSalary: null,
+        maximumSalary: null,
+        currency: null,
+        datePosted: "01/08/2026",
+        jobUrl: "https://www.reed.co.uk/jobs/remote-java-engineer/512346",
+      },
+    ],
+  };
+
+  it("maps search results with a salary-range tag and dd/MM/yyyy dates", () => {
+    const listings = normalizeReed(reedPayload);
+    expect(listings).toHaveLength(2);
+    const l = listings[0];
+    expect(l.externalId).toBe("512345");
+    expect(l.company).toBe("Acme Ltd");
+    expect(l.location).toBe("London");
+    expect(l.tags).toContain("£45k ~ £60k");
+    expect(l.postedAt).toBe("2026-08-19T00:00:00.000Z");
+    expect(l.isRemote).toBe(false);
+    expect(l.url).toContain("/512345");
+    expect(l.description).toBe(""); // filled by detail enrichment
+  });
+
+  it("flags remote titles and tolerates missing salaries", () => {
+    const listings = normalizeReed(reedPayload);
+    expect(listings[1].isRemote).toBe(true);
+    expect(listings[1].tags).toHaveLength(0);
+  });
+
+  it("returns [] for payloads without results", () => {
+    expect(normalizeReed({ results: "nope" })).toEqual([]);
+  });
+});
+
+describe("reedDateToIso", () => {
+  it("parses dd/MM/yyyy", () => {
+    expect(reedDateToIso("19/08/2026")).toBe("2026-08-19T00:00:00.000Z");
+  });
+
+  it("returns null for garbage and missing values", () => {
+    expect(reedDateToIso("not a date")).toBeNull();
+    expect(reedDateToIso(undefined)).toBeNull();
+    expect(reedDateToIso(null)).toBeNull();
+  });
+});
+
+describe("parseReedDetail", () => {
+  it("extracts and strips the job description", () => {
+    expect(parseReedDetail({ jobDescription: "<p>Build <strong>Spring Boot</strong> services</p>" })).toBe(
+      "Build Spring Boot services",
+    );
+  });
+
+  it("returns empty string when the payload has no description", () => {
+    expect(parseReedDetail({})).toBe("");
+    expect(parseReedDetail(null)).toBe("");
   });
 });

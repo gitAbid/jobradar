@@ -5,8 +5,10 @@ export async function register() {
     process.env.NEXT_PHASE !== "phase-production-build"
   ) {
     const { backfillSkillsIfNeeded } = await import("./lib/skills-backfill");
-    backfillSkillsIfNeeded();
+    void backfillSkillsIfNeeded().catch((err) => {
+      console.error("[jobradar] skills backfill failed:", err);
+    });
     const { startScheduler } = await import("./lib/scheduler");
-    startScheduler();
+    await startScheduler();
   }
 }

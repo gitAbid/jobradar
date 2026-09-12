@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import Link from "next/link";
-import { getDb, rowToListing, listFollowedCompanies } from "@/db";
+import { listFollowedCompanies, q, rowToListing } from "@/db";
 import { toggleFollowCompanyAction } from "@/app/actions";
 import { ListingCard } from "@/components/ListingCard";
 import { ArrowUpRight, Building2, Heart, Star, X } from "lucide-react";
@@ -19,9 +19,8 @@ export default async function FollowingPage({
 }) {
   await connection(); // request-time rendering
   const sp = await searchParams;
-  const db = getDb();
 
-  const followed = listFollowedCompanies(db);
+  const followed = await listFollowedCompanies();
   const selected = sp.company?.trim();
   // only accept a filter that matches a followed company (case-insensitive)
   const activeCompany =
@@ -32,19 +31,18 @@ export default async function FollowingPage({
   // Openings whose company is followed, newest first.
   // Capped: a prolific company shouldn't produce an unbounded page.
   const rows = followed.length
-    ? (db
-        .prepare(
-          `SELECT l.*, b.name AS board_name
-           FROM listings l JOIN boards b ON b.id = l.board_id
-           WHERE EXISTS (
-             SELECT 1 FROM followed_companies fc
-             WHERE fc.name = l.company COLLATE NOCASE
-           )
-           ${activeCompany ? "AND l.company = ? COLLATE NOCASE" : ""}
-           ORDER BY COALESCE(l.posted_at, l.fetched_at) DESC
-           LIMIT ${FOLLOWING_LIMIT}`,
-        )
-        .all(...(activeCompany ? [activeCompany] : [])) as Record<string, unknown>[])
+    ? await q<Record<string, unknown>>(
+        `select l.*, b.name as board_name
+         from listings l join boards b on b.id = l.board_id
+         where exists (
+           select 1 from followed_companies fc
+           where lower(fc.name) = lower(l.company)
+         )
+         ${activeCompany ? "and lower(l.company) = lower($1)" : ""}
+         order by coalesce(l.posted_at, l.fetched_at) desc
+         limit ${FOLLOWING_LIMIT}`,
+        activeCompany ? [activeCompany] : [],
+      )
     : [];
 
   const listings = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
@@ -53,13 +51,11 @@ export default async function FollowingPage({
   // Accurate per-company opening counts (unaffected by the feed cap above).
   const counts = new Map<string, number>(
     (
-      db
-        .prepare(
-          `SELECT l.company AS company, COUNT(*) AS n
-           FROM listings l JOIN followed_companies f ON f.name = l.company COLLATE NOCASE
-           GROUP BY l.company COLLATE NOCASE`,
-        )
-        .all() as Array<{ company: string; n: number }>
+      await q<{ company: string; n: number }>(
+        `select min(l.company) as company, count(*) as n
+         from listings l join followed_companies f on lower(f.name) = lower(l.company)
+         group by lower(l.company)`,
+      )
     ).map((r) => [r.company.toLowerCase(), r.n]),
   );
   const totalCount = [...counts.values()].reduce((a, b) => a + b, 0);

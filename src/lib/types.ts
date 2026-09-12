@@ -36,6 +36,8 @@ export interface Listing {
   skills: string[];
   url: string;
   postedAt: string | null;
+  /** application deadline when the source board exposes one, else null */
+  deadline: string | null;
   fetchedAt: string;
   status: ListingStatus;
   userTags: string[];
@@ -62,6 +64,8 @@ export interface NormalizedListing {
   tags: string[];
   url: string;
   postedAt: string | null;
+  /** optional application deadline (only boards that expose one) */
+  deadline?: string | null;
   description: string;
 }
 

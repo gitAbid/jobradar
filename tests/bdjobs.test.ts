@@ -29,5 +29,27 @@ describe("normalizeBdjobs", () => {
     expect(l.isRemote).toBe(false);
     expect(l.tags).toContain("FullTime");
     expect(l.url).toContain("jobdetails.asp?id=1524519");
+    expect(l.deadline).toBe(new Date("Sep 19, 2026").toISOString());
+  });
+
+  it("prefers deadlineDB over the display deadline when both exist", () => {
+    const listings = normalizeBdjobs({
+      data: [
+        {
+          Jobid: "1",
+          jobTitle: "Backend Engineer",
+          deadline: "Sep 19, 2026",
+          deadlineDB: "2026-09-30T00:00:00Z",
+        },
+      ],
+    });
+    expect(listings[0].deadline).toBe("2026-09-30T00:00:00.000Z");
+  });
+
+  it("maps an unparseable deadline to null", () => {
+    const listings = normalizeBdjobs({
+      data: [{ Jobid: "2", jobTitle: "Dev", deadline: "N/A" }],
+    });
+    expect(listings[0].deadline).toBeNull();
   });
 });

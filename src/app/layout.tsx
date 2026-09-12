@@ -3,9 +3,11 @@ import { MapPin, X } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { getDb, listPinnedCountries } from "@/db";
+import { listPinnedCountries } from "@/db";
+import { isSoundEnabled } from "@/lib/settings";
 import { togglePinCountryAction } from "@/app/actions";
 import { AppHeader } from "@/components/AppHeader";
+import { RefreshStatusBar } from "@/components/RefreshStatusBar";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,7 +18,7 @@ export const metadata: Metadata = {
 /** Pinned countries shown in the nav; streams in without blocking layout render. */
 async function PinnedCountriesNav() {
   await connection(); // request-time read
-  const pinned = listPinnedCountries(getDb());
+  const pinned = await listPinnedCountries();
   if (pinned.length === 0) return null;
 
   return (
@@ -56,6 +58,12 @@ async function PinnedCountriesNav() {
   );
 }
 
+/** Refresh progress bar; streams in without blocking layout render. */
+async function RefreshStatus() {
+  await connection(); // request-time read (sound setting)
+  return <RefreshStatusBar soundEnabled={await isSoundEnabled()} />;
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -67,6 +75,9 @@ export default function RootLayout({
           <AppHeader />
           <Suspense fallback={null}>
             <PinnedCountriesNav />
+          </Suspense>
+          <Suspense fallback={null}>
+            <RefreshStatus />
           </Suspense>
         </header>
         <main id="main-content" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>

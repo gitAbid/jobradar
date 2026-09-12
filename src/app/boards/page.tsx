@@ -1,4 +1,4 @@
-import { getDb, rowToBoard } from "@/db";
+import { q, rowToBoard } from "@/db";
 import { getGlobalKeywords, getRefreshIntervalHours, isSoundEnabled } from "@/lib/settings";
 import {
   addBoardAction,
@@ -13,12 +13,14 @@ import { connection } from "next/server";
 
 export default async function BoardsPage() {
   await connection(); // request-time rendering
-  const db = getDb();
-  const boards = (
-    db.prepare("SELECT * FROM boards ORDER BY name").all() as Record<string, unknown>[]
-  ).map((r) => rowToBoard(r as never));
-
-  const intervalHours = getRefreshIntervalHours();
+  const [boards, intervalHours, keywords, sound] = await Promise.all([
+    q<Record<string, unknown>>("select * from boards order by name").then((rows) =>
+      rows.map((r) => rowToBoard(r as never)),
+    ),
+    getRefreshIntervalHours(),
+    getGlobalKeywords(),
+    isSoundEnabled(),
+  ]);
   const activeBoards = boards.filter((board) => board.enabled).length;
   const healthyBoards = boards.filter((board) => board.lastStatus?.startsWith("ok")).length;
 
@@ -93,7 +95,7 @@ export default async function BoardsPage() {
         </div>
       </section>
 
-      <SettingsForm intervalHours={intervalHours} />
+      <SettingsForm intervalHours={intervalHours} keywords={keywords} sound={sound} />
     </div>
   );
 }
@@ -169,9 +171,15 @@ function BoardCard({ board: b }: { board: ReturnType<typeof rowToBoard> }) {
   );
 }
 
-function SettingsForm({ intervalHours }: { intervalHours: number }) {
-  const keywords = getGlobalKeywords();
-  const sound = isSoundEnabled();
+function SettingsForm({
+  intervalHours,
+  keywords,
+  sound,
+}: {
+  intervalHours: number;
+  keywords: string[];
+  sound: boolean;
+}) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_28px_rgb(15_42_67/0.05)] sm:p-5">
       <div className="mb-4 flex items-start gap-3">

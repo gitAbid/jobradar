@@ -13,20 +13,42 @@ import {
   normalizeTalvette,
   normalizeTekarsh,
   normalizeWorkingNomads,
+  normalizeJobicy,
+  normalizeReed,
+  parseReedDetail,
   detectVisaSponsorship,
   detectRemoteScope,
+  extractFeedExtras,
   idFromUrl,
   parseJapanDevDetail,
   capDescription,
 } from "@/lib/adapters/normalize";
-import { parseEasyJobs, parseEasyJobsDetail, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
-import { getDb } from "@/db";
+import { decodeEntities, isTechTitle, parseArcJobs, parseArcDetail, parseEasyJobsApi, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseRelocateMe, parseRelocateMeDetail, parseRiseupLabs, parseRiseupLabsDetail, parseSkillJobs, parseSkillJobsDetail, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
+import { knownEnrichedExternalIds, persistEnrichment, q } from "@/db";
+import type { EnrichPatch } from "@/db";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
 
 const TIMEOUT_MS = 15_000;
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) JobRadar/1.0 (+https://localhost)";
+
+/** Standard enrichment payload persisted back onto stored rows. */
+function toPatch(l: NormalizedListing, extra: Partial<EnrichPatch> = {}): EnrichPatch {
+  return {
+    externalId: l.externalId,
+    searchText: buildSearchText({
+      title: l.title,
+      company: l.company,
+      location: l.location,
+      tags: l.tags,
+      description: l.description,
+    }),
+    skills: JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
+    description: capDescription(l.description),
+    ...extra,
+  };
+}
 
 /** fetch JSON with timeout + one retry; throws on failure */
 async function fetchJson(url: string): Promise<unknown> {
@@ -87,17 +109,23 @@ export async function fetchRss(
     const description = String(
       item.contentEncoded ?? item.content ?? item.contentSnippet ?? "",
     );
+    // company career feeds label location/deadline inside the content —
+    // remote-board feeds don't, and keep the legacy all-remote defaults
+    const extras = extractFeedExtras(title, description);
     return {
       externalId: String(item.guid ?? item.link ?? idFromUrl(title)),
       title,
       company,
-      location: "Remote",
-      isRemote: true,
+      location: extras?.location ?? "Remote",
+      isRemote: extras ? extras.isRemote : true,
       visaSponsorship: detectVisaSponsorship(description, title),
       tags: Array.isArray(item.categories) ? item.categories.map(String) : [],
       url: String(item.link ?? ""),
       postedAt: item.isoDate ?? item.pubDate ?? null,
-      description: description.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+      deadline: extras?.deadline ?? null,
+      description: decodeEntities(
+        description.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+      ),
     } satisfies NormalizedListing;
   });
 }
@@ -112,6 +140,7 @@ const API_NORMALIZERS: Record<string, Normalizer> = {
   arbeitnow: normalizeArbeitnow,
   himalayasapp: normalizeHimalayas,
   workingnomads: normalizeWorkingNomads,
+  jobicy: normalizeJobicy,
 };
 
 function pickNormalizer(boardName: string): Normalizer | null {
@@ -149,6 +178,14 @@ export async function fetchBoardListings(
     );
   }
 
+  // single-company RSS feeds don't name the company per item — the board does
+  if (board.type === "rss") {
+    listings = listings.map((l) => ({
+      ...l,
+      company: l.company || board.name.replace(/ \(careers\)$/i, ""),
+    }));
+  }
+
   // classify remote scope centrally once fields are normalized
   return listings.map((l) => ({
     ...l,
@@ -172,12 +209,13 @@ async function fetchGreenhouse(
 }
 
 /**
- * Cefalo's career site is a client-rendered SPA — render it with headless
- * Chromium and extract /job/{slug} links (title is recoverable from slug).
+ * Cefalo's career site is a Next.js app with server-rendered listing and
+ * detail pages — plain fetch works, no headless browser needed (so the
+ * board also runs on serverless). Listing anchors: /job/{slug}; the slug
+ * carries the title (id suffix stripped).
  */
 async function fetchCefalo(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
-  const { renderPage } = await import("@/lib/adapters/browser");
-  const html = await renderPage(board.url, 5000);
+  const html = await fetchText(board.url);
   const origin = new URL(board.url).origin;
   const slugs = [
     ...new Set(
@@ -206,59 +244,36 @@ async function fetchCefalo(board: Pick<Board, "id" | "name" | "url">): Promise<N
     } satisfies NormalizedListing;
   });
 
-  // ── enrich descriptions via rendered detail pages ────────────────────────
-  // Cefalo's career site is a client-rendered SPA — JDs only exist after
-  // Chromium renders each /job/{slug} page. Bounded like the other adapters.
-  const db = getDb();
-  const knownEnriched = new Set(
-    (
-      db
-        .prepare(
-          "SELECT external_id FROM listings WHERE board_id = ? AND description != ''",
-        )
-        .all(board.id) as { external_id: string }[]
-    ).map((r) => r.external_id),
-  );
-  const { renderText } = await import("@/lib/adapters/browser");
+  // ── enrich descriptions via server-rendered detail pages ────────────────
+  // The full JD is the detail page's visible text. Bounded like the other
+  // adapters; rows that already carry a description are skipped so each
+  // refresh advances.
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "description");
   let enriched = 0;
   for (const l of listings) {
     if (enriched >= 5) break;
     if (knownEnriched.has(l.externalId)) continue;
     try {
-      const text = (await renderText(l.url, 4000))
-        // strip the SPA's site chrome: nav links before the job content and
-        // the contact/copyright footer after it
+      const text = (await fetchText(l.url))
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
         .replace(/^[\s\S]*?Back to job list/i, "")
         .replace(/Copyright ©[\s\S]*$/i, "")
+        .replace(/<[^>]*>/g, " ")
         .replace(/\s+/g, " ")
         .trim();
       if (text.length < 300) continue; // nav/challenge shell only
       l.description = text;
       enriched++;
     } catch {
-      // render failed — retry next refresh
+      // detail fetch failed — retry next refresh
     }
   }
   if (enriched > 0) {
-    const upd = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ?, description = ? WHERE board_id = ? AND external_id = ?",
+    await persistEnrichment(
+      board.id,
+      listings.filter((l) => l.description).map((l) => toPatch(l)),
     );
-    for (const l of listings) {
-      if (!l.description) continue;
-      upd.run(
-        buildSearchText({
-          title: l.title,
-          company: l.company,
-          location: l.location,
-          tags: l.tags,
-          description: l.description,
-        }),
-        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
-        capDescription(l.description),
-        board.id,
-        l.externalId,
-      );
-    }
     console.log(`[jobradar] cefalo: enriched ${enriched} descriptions via detail pages`);
   }
 
@@ -274,10 +289,18 @@ async function fetchScraped(
     listings = await fetchEasyJobs(board);
   } else if (host.endsWith("tokyodev.com")) {
     listings = await fetchTokyoDev(board);
+  } else if (host === "arc.dev") {
+    listings = await fetchArc(board);
+  } else if (host.endsWith("relocate.me")) {
+    listings = await fetchRelocateMe(board);
   } else if (host.endsWith("nextjobz.com.bd")) {
     listings = await fetchNextJobz(board);
   } else if (host === "career.cefalo.com") {
     listings = await fetchCefalo(board);
+  } else if (host.endsWith("riseuplabs.com")) {
+    listings = await fetchRiseupLabs(board);
+  } else if (host === "skill.jobs") {
+    listings = await fetchSkillJobs(board);
   } else if (host === "ignition.airwork.ai") {
     // Airwork public API: skip-based pagination, 50 per page
     listings = [];
@@ -308,64 +331,14 @@ async function fetchScraped(
 }
 
 /**
- * easy.jobs tenant boards: listing page AND detail pages are server-rendered
- * (the full JD sits in a Description content-card section — see
- * parseEasyJobsDetail). Enrich up to 10 new jobs per refresh; rows that
- * already carry a description are skipped so each refresh advances.
+ * easy.jobs tenant boards. The career pages are a client-rendered SPA, so
+ * job data is read from the JSON API the site itself calls
+ * (GET {origin}/api/career/home — see parseEasyJobsApi). The JD HTML comes
+ * inline per job, so no detail-page enrichment is needed.
  */
 async function fetchEasyJobs(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
-  const listings = parseEasyJobs(await fetchText(board.url), board.url);
-
-  const db = getDb();
-  const knownEnriched = new Set(
-    (
-      db
-        .prepare(
-          "SELECT external_id FROM listings WHERE board_id = ? AND description != ''",
-        )
-        .all(board.id) as { external_id: string }[]
-    ).map((r) => r.external_id),
-  );
-
-  let enriched = 0;
-  for (const l of listings) {
-    if (enriched >= 10) break;
-    if (knownEnriched.has(l.externalId)) continue;
-    try {
-      const detail = parseEasyJobsDetail(await fetchText(l.url));
-      if (!detail?.description) continue;
-      l.description = detail.description;
-      if (detail.postedAt && !l.postedAt) l.postedAt = detail.postedAt;
-      enriched++;
-    } catch {
-      // detail fetch failed — try again next refresh
-    }
-  }
-  if (enriched > 0) {
-    const upd = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ?, posted_at = ?, description = ? WHERE board_id = ? AND external_id = ?",
-    );
-    for (const l of listings) {
-      if (!l.description) continue;
-      upd.run(
-        buildSearchText({
-          title: l.title,
-          company: l.company,
-          location: l.location,
-          tags: l.tags,
-          description: l.description,
-        }),
-        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
-        l.postedAt,
-        capDescription(l.description),
-        board.id,
-        l.externalId,
-      );
-    }
-    console.log(`[jobradar] easy.jobs: enriched ${enriched} descriptions via detail pages`);
-  }
-
-  return listings;
+  const origin = new URL(board.url).origin;
+  return parseEasyJobsApi(await fetchJson(`${origin}/api/career/home`), origin);
 }
 
 /**
@@ -377,16 +350,7 @@ async function fetchEasyJobs(board: Pick<Board, "id" | "name" | "url">): Promise
 async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
   const listings = parseTokyoDev(await fetchText(board.url));
 
-  const db = getDb();
-  const knownEnriched = new Set(
-    (
-      db
-        .prepare(
-          "SELECT external_id FROM listings WHERE board_id = ? AND skills != '[]'",
-        )
-        .all(board.id) as { external_id: string }[]
-    ).map((r) => r.external_id),
-  );
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "skills");
 
   const { renderPage } = await import("@/lib/adapters/browser");
   let enriched = 0;
@@ -405,31 +369,96 @@ async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise
     }
   }
   if (enriched > 0) {
-    const upd = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ?, location = ?, posted_at = ?, description = ? WHERE board_id = ? AND external_id = ?",
+    await persistEnrichment(
+      board.id,
+      listings
+        .filter((l) => l.description)
+        .map((l) => toPatch(l, { location: l.location, postedAt: l.postedAt })),
     );
-    for (const l of listings) {
-      if (!l.description) continue;
-      upd.run(
-        buildSearchText({
-          title: l.title,
-          company: l.company,
-          location: l.location,
-          tags: l.tags,
-          description: l.description,
-        }),
-        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
-        l.location,
-        l.postedAt,
-        capDescription(l.description),
-        board.id,
-        l.externalId,
-      );
-    }
     console.log(`[jobradar] tokyodev: enriched ${enriched} descriptions via detail pages`);
   }
 
   return listings;
+}
+
+/**
+ * riseuplabs.com/jobs: listing page AND detail pages are server-rendered.
+ * Descriptions live on each /jobs/{slug}/ page — enrich up to 10 new jobs
+ * per refresh; rows that already carry a description are skipped so each
+ * refresh advances. Deadlines come straight from the listing meta.
+ */
+async function fetchRiseupLabs(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const listings = parseRiseupLabs(await fetchText(board.url));
+
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "description");
+
+  let enriched = 0;
+  for (const l of listings) {
+    if (enriched >= 10) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const description = parseRiseupLabsDetail(await fetchText(l.url));
+      if (!description) continue;
+      l.description = description;
+      enriched++;
+    } catch {
+      // detail fetch failed — try again next refresh
+    }
+  }
+  if (enriched > 0) {
+    await persistEnrichment(
+      board.id,
+      listings.filter((l) => l.description).map((l) => toPatch(l)),
+    );
+    console.log(`[jobradar] riseuplabs: enriched ${enriched} descriptions via detail pages`);
+  }
+
+  return listings;
+}
+
+/**
+ * skill.jobs is a general BD job portal whose listing page embeds the newest
+ * ~25 jobs as schema.org JobPosting objects. Titles are filtered to tech
+ * roles; each job names its real hiring company, so one board covers many
+ * BD employers. Descriptions/skills live on detail pages — enrich up to 10
+ * new jobs per refresh. Deadlines (validThrough) come from the listing.
+ */
+async function fetchSkillJobs(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const tech = parseSkillJobs(await fetchText(board.url)).filter((l) => isTechTitle(l.title));
+
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "description");
+
+  let enriched = 0;
+  for (const l of tech) {
+    if (enriched >= 10) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const detail = parseSkillJobsDetail(await fetchText(l.url));
+      if (!detail?.description) continue;
+      l.description = detail.description;
+      if (l.tags.length === 0 && detail.skills.length > 0) l.tags = detail.skills;
+      enriched++;
+    } catch {
+      // detail fetch failed — try again next refresh
+    }
+  }
+  if (enriched > 0) {
+    await persistEnrichment(
+      board.id,
+      tech
+        .filter((l) => l.description)
+        .map((l) =>
+          toPatch(l, {
+            tags: JSON.stringify(l.tags),
+            postedAt: l.postedAt,
+            deadline: l.deadline ?? null,
+          }),
+        ),
+    );
+    console.log(`[jobradar] skill.jobs: enriched ${enriched} descriptions via detail pages`);
+  }
+
+  return tech;
 }
 
 /**
@@ -447,9 +476,10 @@ async function fetchNextJobz(
 
   const existing = new Set(
     (
-      getDb()
-        .prepare("SELECT external_id FROM listings WHERE board_id = ?")
-        .all(board.id) as { external_id: string }[]
+      await q<{ external_id: string }>(
+        "select external_id from listings where board_id = $1",
+        [board.id],
+      )
     ).map((r) => r.external_id),
   );
 
@@ -482,6 +512,7 @@ async function fetchApiListings(board: Pick<Board, "id" | "name" | "type" | "url
   if (board.name === "Arbeitnow") return fetchArbeitnow();
   if (board.name === "BDJobs IT") return fetchBdjobs(board);
   if (board.name === "JapanDev") return fetchJapanDev(board);
+  if (board.name === "Reed (UK)") return fetchReed(board);
 
   // URL-pattern dispatch for platforms hosting many companies
   const host = new URL(board.url).host;
@@ -556,16 +587,7 @@ async function fetchJapanDev(board: Pick<Board, "id" | "name" | "url">): Promise
   const all = normalizeJapanDev(await fetchJson(base));
 
   // ── enrich descriptions + visa flags via detail endpoints ────────────────
-  const db = getDb();
-  const knownEnriched = new Set(
-    (
-      db
-        .prepare(
-          "SELECT external_id FROM listings WHERE board_id = ? AND skills != '[]'",
-        )
-        .all(board.id) as { external_id: string }[]
-    ).map((r) => r.external_id),
-  );
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "skills");
   let enriched = 0;
   for (const l of all) {
     if (l.description.length >= 80 && l.visaSponsorship) continue;
@@ -584,26 +606,12 @@ async function fetchJapanDev(board: Pick<Board, "id" | "name" | "url">): Promise
   // persist enriched text/skills/visa onto existing rows immediately (the
   // upsert in refresh.ts never overwrites existing rows)
   if (enriched > 0) {
-    const upd = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ?, visa_sponsorship = ?, description = ? WHERE board_id = ? AND external_id = ?",
+    await persistEnrichment(
+      board.id,
+      all
+        .filter((l) => l.description.length >= 80)
+        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0 })),
     );
-    for (const l of all) {
-      if (l.description.length < 80) continue;
-      upd.run(
-        buildSearchText({
-          title: l.title,
-          company: l.company,
-          location: l.location,
-          tags: l.tags,
-          description: l.description,
-        }),
-        JSON.stringify(extractSkills({ title: l.title, tags: l.tags, description: l.description })),
-        l.visaSponsorship ? 1 : 0,
-        capDescription(l.description),
-        board.id,
-        l.externalId,
-      );
-    }
     console.log(`[jobradar] japandev: enriched ${enriched} listings via detail API`);
   }
 
@@ -640,16 +648,7 @@ async function fetchBdjobs(
   // Chromium; rows already carrying skills are skipped so each refresh
   // advances through the catalog.
   const { renderText } = await import("@/lib/adapters/browser");
-  const db = getDb();
-  const skillsKnown = new Set(
-    (
-      db
-        .prepare(
-          "SELECT external_id FROM listings WHERE board_id = ? AND skills != '[]'",
-        )
-        .all(board.id) as { external_id: string }[]
-    ).map((r) => r.external_id),
-  );
+  const skillsKnown = await knownEnrichedExternalIds(board.id, "skills");
   let enriched = 0;
   for (const l of all) {
     if (l.description.length >= 80) continue;
@@ -668,29 +667,180 @@ async function fetchBdjobs(
   }
   // persist enriched text/skills onto existing rows immediately
   if (enriched > 0) {
-    const updText = db.prepare(
-      "UPDATE listings SET search_text = ?, skills = ?, description = ? WHERE board_id = ? AND external_id = ? AND skills = '[]'",
+    await persistEnrichment(
+      board.id,
+      all
+        .filter((l) => l.description.length >= 80)
+        .map((l) => toPatch(l)),
+      { onlyWhenUnenriched: true },
     );
-    for (const l of all) {
-      if (l.description.length < 80) continue;
-      const searchText = buildSearchText({
-        title: l.title,
-        company: l.company,
-        location: l.location,
-        tags: l.tags,
-        description: l.description,
-      });
-      const skills = extractSkills({
-        title: l.title,
-        tags: l.tags,
-        description: l.description,
-      });
-      updText.run(searchText, JSON.stringify(skills), capDescription(l.description), board.id, l.externalId);
-    }
     console.log(`[jobradar] bdjobs: enriched ${enriched} descriptions via detail pages`);
   }
 
   return all;
+}
+
+/**
+ * Reed UK jobseeker API — free key required (reed.co.uk/developers/Jobseeker),
+ * sent as the Basic-auth username with an empty password. Search results carry
+ * no description, so new jobs are enriched from /jobs/{id} (up to 30 per
+ * refresh, JapanDev-style: bounded, skipping rows already enriched).
+ */
+async function fetchReed(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const apiKey = process.env.REED_API_KEY;
+  if (!apiKey) {
+    throw new Error("REED_API_KEY not set — create a free key at reed.co.uk/developers/Jobseeker");
+  }
+  const auth = `Basic ${Buffer.from(`${apiKey}:`).toString("base64")}`;
+
+  // keep the seeded query, force a usable page size, walk up to two offset pages
+  const searchUrl = new URL(board.url);
+  searchUrl.searchParams.set("resultsToTake", "100");
+  const all: NormalizedListing[] = [];
+  const seen = new Set<string>();
+  for (let offset = 0; offset < 200; offset += 100) {
+    searchUrl.searchParams.set("resultsOffset", String(offset));
+    const payload: unknown = JSON.parse(await fetchText(searchUrl.toString(), { Authorization: auth }));
+    let fresh = 0;
+    for (const l of normalizeReed(payload)) {
+      if (!seen.has(l.externalId)) {
+        seen.add(l.externalId);
+        all.push(l);
+        fresh++;
+      }
+    }
+    if (fresh === 0) break; // ran past the end
+  }
+
+  // ── enrich descriptions via the job-details endpoint ─────────────────────
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "description");
+  let enriched = 0;
+  for (const l of all) {
+    if (l.description) continue;
+    if (enriched >= 30) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const detail: unknown = JSON.parse(
+        await fetchText(`https://www.reed.co.uk/api/1.0/jobs/${l.externalId}`, { Authorization: auth }),
+      );
+      const description = parseReedDetail(detail);
+      if (!description) continue;
+      l.description = description;
+      l.visaSponsorship ||= detectVisaSponsorship(description, l.title);
+      enriched++;
+    } catch {
+      // detail fetch failed — try again next refresh
+    }
+  }
+  if (enriched > 0) {
+    await persistEnrichment(
+      board.id,
+      all
+        .filter((l) => l.description)
+        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0 })),
+    );
+    console.log(`[jobradar] reed: enriched ${enriched} descriptions via detail API`);
+  }
+
+  return all;
+}
+
+/**
+ * arc.dev embeds its listings (vetted + external partner jobs, 30 each) in the
+ * page's __NEXT_DATA__. Vetted jobs lack company/description — enrich up to 20
+ * new jobs per refresh from the detail page payload, which also carries the
+ * explicit visaOrRelocationRequired flag.
+ */
+async function fetchArc(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const listings = parseArcJobs(await fetchText(board.url));
+
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "description");
+
+  let enriched = 0;
+  for (const l of listings) {
+    if (l.description) continue;
+    if (enriched >= 20) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const detail = parseArcDetail(await fetchText(l.url));
+      if (!detail) continue;
+      if (detail.description) l.description = detail.description;
+      if (detail.visaSponsorship !== null) l.visaSponsorship = detail.visaSponsorship;
+      else if (detail.description) l.visaSponsorship ||= detectVisaSponsorship(detail.description, l.title);
+      if (!l.company && detail.company) l.company = detail.company;
+      enriched++;
+    } catch {
+      // detail fetch failed — try again next refresh
+    }
+  }
+  if (enriched > 0) {
+    await persistEnrichment(
+      board.id,
+      listings
+        .filter((l) => l.description)
+        .map((l) =>
+          toPatch(l, {
+            visaSponsorship: l.visaSponsorship ? 1 : 0,
+            company: l.company,
+          }),
+        ),
+    );
+    console.log(`[jobradar] arc.dev: enriched ${enriched} listings via detail pages`);
+  }
+
+  return listings;
+}
+
+/**
+ * relocate.me renders plain-HTML job cards, newest first (~20 per page).
+ * Fetch the first two pages; page 2 may legitimately run out of jobs, so its
+ * failure is non-fatal. Enrich up to 10 new jobs per refresh from the detail
+ * page's JSON-LD JobPosting (description + posted date) — relocation-native
+ * board, so JDs frequently trip detectVisaSponsorship.
+ */
+async function fetchRelocateMe(board: Pick<Board, "id" | "name" | "url">): Promise<NormalizedListing[]> {
+  const seen = new Map<string, NormalizedListing>();
+  for (const l of parseRelocateMe(await fetchText(board.url))) seen.set(l.externalId, l);
+  try {
+    for (const l of parseRelocateMe(await fetchText(`${board.url}?page=2`))) {
+      if (!seen.has(l.externalId)) seen.set(l.externalId, l);
+    }
+  } catch {
+    // fewer than one full page of jobs — fine
+  }
+  const listings = [...seen.values()];
+
+  const knownEnriched = await knownEnrichedExternalIds(board.id, "description");
+
+  let enriched = 0;
+  for (const l of listings) {
+    if (l.description) continue;
+    if (enriched >= 10) break;
+    if (knownEnriched.has(l.externalId)) continue;
+    try {
+      const detail = parseRelocateMeDetail(await fetchText(l.url));
+      if (!detail) continue;
+      l.description = detail.description;
+      if (detail.postedAt && !l.postedAt) l.postedAt = detail.postedAt;
+      l.visaSponsorship ||= detectVisaSponsorship(detail.description, l.title);
+      enriched++;
+    } catch {
+      // detail fetch failed — try again next refresh
+    }
+  }
+  if (enriched > 0) {
+    await persistEnrichment(
+      board.id,
+      listings
+        .filter((l) => l.description)
+        .map((l) =>
+          toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0, postedAt: l.postedAt }),
+        ),
+    );
+    console.log(`[jobradar] relocate.me: enriched ${enriched} descriptions via detail pages`);
+  }
+
+  return listings;
 }
 
 interface GenericJob {

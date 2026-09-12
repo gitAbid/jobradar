@@ -1,4 +1,4 @@
-import { getDb, rowToListing, listFollowedCompanies } from "@/db";
+import { listFollowedCompanies, q, rowToListing } from "@/db";
 import type { FilterableListing, ListingStatus } from "@/lib/types";
 import {
   addUserTagAction,
@@ -20,37 +20,35 @@ const COLUMN_LIMIT = 50;
 
 export default async function AppliedPage() {
   await connection(); // request-time rendering
-  const db = getDb();
 
   // Accurate totals per column (cheap aggregate).
   const totals = new Map<string, number>(
     (
-      db
-        .prepare(
-          `SELECT status, COUNT(*) AS n FROM listings
-           WHERE status IN ('favorite','applied') GROUP BY status`,
-        )
-        .all() as Array<{ status: string; n: number }>
+      await q<{ status: string; n: number }>(
+        `select status, count(*) as n from listings
+         where status in ('favorite','applied') group by status`,
+      )
     ).map((r) => [r.status, r.n]),
   );
 
   // Cap each column: hydrating thousands of cards blocks the page for seconds.
   const itemsByStatus = new Map<string, FilterableListing[]>(
-    COLUMNS.map((col) => {
-      const rows = db
-        .prepare(
-          `SELECT l.*, b.name AS board_name
-           FROM listings l JOIN boards b ON b.id = l.board_id
-           WHERE l.status = ?
-           ORDER BY COALESCE(l.posted_at, l.fetched_at) DESC
-           LIMIT ${COLUMN_LIMIT}`,
-        )
-        .all(col.status) as Record<string, unknown>[];
-      return [col.status, rows.map((r) => rowToListing(r as never)) as FilterableListing[]];
-    }),
+    await Promise.all(
+      COLUMNS.map(async (col) => {
+        const rows = await q<Record<string, unknown>>(
+          `select l.*, b.name as board_name
+           from listings l join boards b on b.id = l.board_id
+           where l.status = $1
+           order by coalesce(l.posted_at, l.fetched_at) desc
+           limit ${COLUMN_LIMIT}`,
+          [col.status],
+        );
+        return [col.status, rows.map((r) => rowToListing(r as never)) as FilterableListing[]] as const;
+      }),
+    ),
   );
 
-  const followedCompanies = new Set(listFollowedCompanies(db).map((n) => n.toLowerCase()));
+  const followedCompanies = new Set((await listFollowedCompanies()).map((n) => n.toLowerCase()));
   const favoriteTotal = totals.get("favorite") ?? 0;
   const appliedTotal = totals.get("applied") ?? 0;
 

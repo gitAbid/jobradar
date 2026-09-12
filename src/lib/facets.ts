@@ -13,7 +13,7 @@ export const COUNTRY_FACETS: Array<[string, RegExp]> = [
   ["India", /\b(india|bangalore|bengaluru|mumbai|delhi|pune|hyderabad|chennai|noida|gurgaon|gurugram|kolkata)\b/i],
   ["Canada", /\b(canada|canadian|toronto|vancouver|montreal|ottawa|calgary)\b/i],
   ["Netherlands", /\b(netherlands|holland|amsterdam|rotterdam|eindhoven|utrecht)\b/i],
-  ["Poland", /\b(poland|polish|warsaw|krakow|kraków|wroclaw|gdansk)\b/i],
+  ["Poland", /\b(poland|polish|warsaw|warszawa|krakow|kraków|wroclaw|wrocław|gdansk|poznan|poznań)\b/i],
   ["France", /\b(france|paris|lyon|toulouse)\b/i],
   ["Spain", /\b(spain|spanish|madrid|barcelona|valencia)\b/i],
   ["Portugal", /\b(portugal|lisbon|porto)\b/i],

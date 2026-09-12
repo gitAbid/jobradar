@@ -1,7 +1,40 @@
 import { Heart, Send, Eye, ExternalLink, MapPin, Building2, Globe, Plane, Star, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { setListingStatusAction, toggleFollowCompanyAction } from "@/app/actions";
+import { freshnessOf, type FreshnessTier } from "@/lib/freshness";
 import type { FilterableListing } from "@/lib/types";
+
+/**
+ * Freshness → presentation. Only urgent/young tiers get any treatment, and it
+ * is limited to a soft left edge + faint tint (card) and a small pill (badge),
+ * so the quiet majority of cards are untouched and text contrast is unchanged.
+ */
+const CARD_ACCENT: Record<FreshnessTier, string> = {
+  fresh: "border-l-[3px] border-l-emerald-400/70 bg-emerald-50/40 hover:border-l-emerald-300",
+  closing: "border-l-[3px] border-l-amber-400/70 bg-amber-50/40 hover:border-l-amber-300",
+  expired: "border-l-[3px] border-l-slate-300/70",
+  recent: "",
+  aging: "",
+  unknown: "",
+};
+
+const BADGE_STYLE: Record<FreshnessTier, string> = {
+  fresh: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  closing: "border-amber-200 bg-amber-50 text-amber-800",
+  expired: "border-slate-200 bg-slate-100 text-slate-500",
+  recent: "",
+  aging: "",
+  unknown: "",
+};
+
+const BADGE_DOT: Record<FreshnessTier, string> = {
+  fresh: "bg-emerald-500",
+  closing: "bg-amber-500",
+  expired: "bg-slate-400",
+  recent: "",
+  aging: "",
+  unknown: "",
+};
 
 /** Skill chip → clicking filters the dashboard to that skill. */
 function SkillChip({ skill }: { skill: string }) {
@@ -111,10 +144,13 @@ export function ListingCard({
   followedCompanies?: Set<string>;
 }) {
   const posted = listing.postedAt ? timeAgo(listing.postedAt) : null;
+  const freshness = freshnessOf(listing);
   const isFollowed = followedCompanies?.has(listing.company.toLowerCase()) ?? false;
 
   return (
-    <article className="group flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgb(15_42_67/0.045)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-[0_14px_30px_rgb(15_42_67/0.09)] sm:p-5">
+    <article
+      className={`group flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgb(15_42_67/0.045)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-[0_14px_30px_rgb(15_42_67/0.09)] sm:p-5 ${CARD_ACCENT[freshness.tier]}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -127,6 +163,21 @@ export function ListingCard({
               <Highlight text={listing.title} keywords={matched} />
               <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400 transition-colors group-hover:text-teal-500" />
             </a>
+            {freshness.label && (
+              <span
+                title={
+                  freshness.tier === "expired"
+                    ? `Deadline was ${listing.deadline ? new Date(listing.deadline).toLocaleDateString() : "unspecified"}`
+                    : freshness.tier === "closing"
+                      ? `Deadline ${listing.deadline ? new Date(listing.deadline).toLocaleDateString() : ""}`
+                      : `Posted ${listing.postedAt ? new Date(listing.postedAt).toLocaleDateString() : ""}`
+                }
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${BADGE_STYLE[freshness.tier]}`}
+              >
+                <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${BADGE_DOT[freshness.tier]}`} />
+                {freshness.label}
+              </span>
+            )}
             {listing.isRemote && listing.remoteScope === "anywhere" && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-teal-800">
                 <Globe className="h-3.5 w-3.5" /> Remote · Anywhere

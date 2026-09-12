@@ -1,5 +1,5 @@
-import { getDb, rowToListing, listFollowedCompanies, listPinnedCountries } from "@/db";
-import { getGlobalKeywords, isSoundEnabled } from "@/lib/settings";
+import { listFollowedCompanies, listPinnedCountries, q, rowToListing } from "@/db";
+import { getGlobalKeywords } from "@/lib/settings";
 import type { FilterableListing } from "@/lib/types";
 import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
@@ -31,21 +31,19 @@ export default async function DashboardPage({
 }) {
   await connection(); // always render at request time (DB reads must not be prerendered)
   const sp = await searchParams;
-  const db = getDb();
-  const globalKeywords = getGlobalKeywords();
-
-  const rows = db
-    .prepare(
-      `SELECT l.*, b.name AS board_name, b.filter_keywords AS board_filter_keywords
-       FROM listings l JOIN boards b ON b.id = l.board_id
-       ORDER BY COALESCE(l.posted_at, l.fetched_at) DESC`,
-    )
-    .all() as Record<string, unknown>[];
+  const [globalKeywords, rows] = await Promise.all([
+    getGlobalKeywords(),
+    q<Record<string, unknown>>(
+      `select l.*, b.name as board_name, b.filter_keywords as board_filter_keywords
+       from listings l join boards b on b.id = l.board_id
+       order by coalesce(l.posted_at, l.fetched_at) desc`,
+    ),
+  ]);
 
   const pool = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
   const view = buildJobView(pool, sp, globalKeywords);
-  const followedCompanies = new Set(listFollowedCompanies(db).map((n) => n.toLowerCase()));
-  const pinnedCountries = listPinnedCountries(db).map((n) => n.toLowerCase());
+  const followedCompanies = new Set((await listFollowedCompanies()).map((n) => n.toLowerCase()));
+  const pinnedCountries = (await listPinnedCountries()).map((n) => n.toLowerCase());
 
   return (
     <div className="flex flex-col gap-5">
@@ -66,7 +64,7 @@ export default async function DashboardPage({
                 Scan the newest matches, save the promising ones, and keep moving.
               </p>
             </div>
-            <RefreshButton soundEnabled={isSoundEnabled()} />
+            <RefreshButton />
           </div>
 
           <div className="flex flex-wrap gap-2.5">
@@ -123,7 +121,7 @@ export default async function DashboardPage({
                 Refresh your boards for the latest openings, or add a new source if you want to widen the radar.
               </p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
-                <RefreshButton soundEnabled={isSoundEnabled()} />
+                <RefreshButton />
                 <Link href="/boards" className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 hover:border-teal-300 hover:text-teal-800">
                   Add a board
                 </Link>

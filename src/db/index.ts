@@ -1,208 +1,415 @@
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
+import postgres from "postgres";
 import type { Board, BoardType, Listing, ListingStatus } from "@/lib/types";
 
-// ── Singleton DB (survives HMR via globalThis) ─────────────────────────────
+// ── Postgres connection (Neon; singleton survives HMR via globalThis) ──
 
-declare const globalThis: { __jobradarDb?: DatabaseSync };
+declare const globalThis: {
+  __jobradarSql?: postgres.Sql;
+  __jobradarSchemaReady?: Promise<void>;
+};
 
-function createDb(): DatabaseSync {
-  const dir = path.join(process.cwd(), "data");
-  mkdirSync(dir, { recursive: true });
-  const db = new DatabaseSync(path.join(dir, "jobs.db"));
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA foreign_keys = ON;");
-  migrate(db);
-  seed(db);
-  return db;
+export function getDb(): postgres.Sql {
+  if (!globalThis.__jobradarSql) {
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+      throw new Error(
+        "DATABASE_URL is not set — point it at the Neon pooled connection string",
+      );
+    }
+    globalThis.__jobradarSql = postgres(url, {
+      // required behind Neon's connection pooler (pgbouncer-style)
+      prepare: false,
+      max: 5,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
+  }
+  return globalThis.__jobradarSql;
 }
 
-export function getDb(): DatabaseSync {
-  if (!globalThis.__jobradarDb) globalThis.__jobradarDb = createDb();
-  return globalThis.__jobradarDb;
-}
-
-// ── Schema ──────────────────────────────────────────────────────────────────
-
-function migrate(db: DatabaseSync) {
-  // Older schemas had CHECK (type IN ('api','rss')) on boards.type — rebuild
-  // the table without it so new board types (greenhouse) are accepted.
-  const boardsSql = (
-    db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'boards'").get() as
-      | { sql: string }
-      | undefined
-  )?.sql;
-  if (boardsSql && boardsSql.includes("CHECK")) {
-    db.exec("PRAGMA foreign_keys = OFF");
-    db.exec("BEGIN IMMEDIATE"); // serialize against other processes/workers
-    try {
-      // re-check inside the write lock — another worker may have migrated already
-      const sqlNow = (
-        db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'boards'").get() as
-          | { sql: string }
-          | undefined
-      )?.sql;
-      if (sqlNow && sqlNow.includes("CHECK")) {
-        db.exec("ALTER TABLE boards RENAME TO boards_old");
-        db.exec(`CREATE TABLE boards (
-          id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-          name                TEXT NOT NULL UNIQUE,
-          type                TEXT NOT NULL,
-          url                 TEXT NOT NULL,
-          enabled             INTEGER NOT NULL DEFAULT 1,
-          filter_keywords     TEXT NOT NULL DEFAULT '[]',
-          last_fetched_at     TEXT,
-          last_status         TEXT,
-          fetch_interval_hours INTEGER NOT NULL DEFAULT 4
-        )`);
-        db.exec(
-          "INSERT INTO boards (id, name, type, url, enabled, filter_keywords, last_fetched_at, last_status, fetch_interval_hours) " +
-            "SELECT id, name, type, url, enabled, filter_keywords, last_fetched_at, last_status, fetch_interval_hours FROM boards_old",
+/**
+ * Schema + seed, applied once per process before the first query. The DDL is
+ * idempotent, so concurrent instances racing on a fresh database converge.
+ */
+function ensureSchema(): Promise<void> {
+  if (!globalThis.__jobradarSchemaReady) {
+    globalThis.__jobradarSchemaReady = (async () => {
+      const db = getDb();
+      await db.unsafe(`
+        create table if not exists boards (
+          id                   integer generated always as identity primary key,
+          name                 text not null unique,
+          type                 text not null,
+          url                  text not null,
+          enabled              integer not null default 1,
+          filter_keywords      text not null default '[]',
+          last_fetched_at      text,
+          last_status          text,
+          fetch_interval_hours integer not null default 4
         );
-        db.exec("DROP TABLE boards_old");
-      }
-      db.exec("COMMIT");
-    } catch (err) {
-      db.exec("ROLLBACK");
+
+        create table if not exists listings (
+          id               integer generated always as identity primary key,
+          board_id         integer not null references boards(id) on delete cascade,
+          external_id      text not null,
+          title            text not null,
+          company          text not null default '',
+          location         text not null default '',
+          is_remote        integer not null default 0,
+          visa_sponsorship integer not null default 0,
+          remote_scope     text,
+          tags             text not null default '[]',
+          skills           text not null default '[]',
+          url              text not null default '',
+          posted_at        text,
+          deadline         text,
+          fetched_at       text not null,
+          status           text not null default 'new'
+                           check (status in ('new','favorite','applied','hidden')),
+          user_tags        text not null default '[]',
+          search_text      text not null default '',
+          description      text not null default '',
+          unique (board_id, external_id)
+        );
+        create index if not exists idx_listings_board on listings(board_id);
+        create index if not exists idx_listings_status on listings(status);
+
+        create table if not exists app_settings (
+          key   text primary key,
+          value text not null
+        );
+
+        create table if not exists followed_companies (
+          id         integer generated always as identity primary key,
+          name       text not null,
+          created_at text not null
+        );
+        create unique index if not exists uq_followed_companies_name
+          on followed_companies (lower(name));
+
+        create table if not exists pinned_countries (
+          id         integer generated always as identity primary key,
+          name       text not null,
+          created_at text not null
+        );
+        create unique index if not exists uq_pinned_countries_name
+          on pinned_countries (lower(name));
+      `);
+
+      // Tables live in the API-exposed `public` schema; RLS with no policies
+      // locks the Data API out while the postgres-role app connection
+      // (table owner) keeps full access.
+      await db.unsafe(`
+        alter table boards enable row level security;
+        alter table listings enable row level security;
+        alter table app_settings enable row level security;
+        alter table followed_companies enable row level security;
+        alter table pinned_countries enable row level security;
+      `);
+
+      await db.unsafe(
+        `insert into boards (name, type, url, filter_keywords, enabled)
+         select * from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::int[])
+         on conflict (name) do nothing`,
+        [
+          SEED_BOARDS.map((b) => b.name),
+          SEED_BOARDS.map((b) => b.type),
+          SEED_BOARDS.map((b) => b.url),
+          SEED_BOARDS.map((b) => JSON.stringify(b.keywords)),
+          SEED_BOARDS.map((b) => (b.enabled === false ? 0 : 1)),
+        ] as never[],
+      );
+    })().catch((err) => {
+      // allow a later request to retry a failed init (e.g. transient DNS)
+      globalThis.__jobradarSchemaReady = undefined;
       throw err;
-    } finally {
-      db.exec("PRAGMA foreign_keys = ON");
-    }
+    });
   }
+  return globalThis.__jobradarSchemaReady;
+}
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS boards (
-      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-      name                TEXT NOT NULL UNIQUE,
-      type                TEXT NOT NULL,
-      url                 TEXT NOT NULL,
-      enabled             INTEGER NOT NULL DEFAULT 1,
-      filter_keywords     TEXT NOT NULL DEFAULT '[]',
-      last_fetched_at     TEXT,
-      last_status         TEXT,
-      fetch_interval_hours INTEGER NOT NULL DEFAULT 4
+// ── Query helpers (all funnel through ensureSchema) ────────────────────────
+
+/** Run a query and return all rows. */
+export async function q<T = Record<string, unknown>>(
+  query: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  await ensureSchema();
+  return (await getDb().unsafe(query, params as never[])) as T[];
+}
+
+/** Run a query and return the first row, if any. */
+export async function qOne<T = Record<string, unknown>>(
+  query: string,
+  params: unknown[] = [],
+): Promise<T | undefined> {
+  const rows = await q<T>(query, params);
+  return rows[0];
+}
+
+/** Run a mutating query; returns the number of affected rows. */
+export async function run(query: string, params: unknown[] = []): Promise<number> {
+  await ensureSchema();
+  const result = await getDb().unsafe(query, params as never[]);
+  return result.count;
+}
+
+// ── Cross-cutting helpers ──────────────────────────────────────────────────
+
+export interface NewListingRow {
+  externalId: string;
+  title: string;
+  company: string;
+  location: string;
+  isRemote: boolean;
+  visaSponsorship: boolean;
+  remoteScope: string | null;
+  tags: string;
+  skills: string;
+  url: string;
+  postedAt: string | null;
+  deadline: string | null;
+  fetchedAt: string;
+  searchText: string;
+  description: string;
+}
+
+const INSERT_COLUMNS = [
+  "board_id",
+  "external_id",
+  "title",
+  "company",
+  "location",
+  "is_remote",
+  "visa_sponsorship",
+  "remote_scope",
+  "tags",
+  "skills",
+  "url",
+  "posted_at",
+  "deadline",
+  "fetched_at",
+  "search_text",
+  "description",
+] as const;
+
+/**
+ * Bulk-insert new listings, skipping rows that already exist for the board.
+ * Multi-row chunks keep the round-trip count sane over the network.
+ */
+export async function insertListings(boardId: number, rows: NewListingRow[]): Promise<number> {
+  const valid = rows.filter((r) => r.title && r.url); // skip malformed entries
+  let inserted = 0;
+  const CHUNK = 20;
+  for (let i = 0; i < valid.length; i += CHUNK) {
+    const chunk = valid.slice(i, i + CHUNK);
+    const params: unknown[] = [];
+    const tuples = chunk.map((r) => {
+      const base = params.length;
+      params.push(
+        boardId,
+        r.externalId,
+        r.title,
+        r.company,
+        r.location,
+        r.isRemote ? 1 : 0,
+        r.visaSponsorship ? 1 : 0,
+        r.remoteScope,
+        r.tags,
+        r.skills,
+        r.url,
+        r.postedAt,
+        r.deadline,
+        r.fetchedAt,
+        r.searchText,
+        r.description,
+      );
+      return `(${INSERT_COLUMNS.map((_, n) => `$${base + n + 1}`).join(", ")})`;
+    });
+    inserted += await run(
+      `insert into listings (${INSERT_COLUMNS.join(", ")}) values ${tuples.join(", ")}
+       on conflict (board_id, external_id) do nothing`,
+      params,
     );
-
-    CREATE TABLE IF NOT EXISTS listings (
-      id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      board_id         INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
-      external_id      TEXT NOT NULL,
-      title            TEXT NOT NULL,
-      company          TEXT NOT NULL DEFAULT '',
-      location         TEXT NOT NULL DEFAULT '',
-      is_remote        INTEGER NOT NULL DEFAULT 0,
-      visa_sponsorship INTEGER NOT NULL DEFAULT 0,
-      tags             TEXT NOT NULL DEFAULT '[]',
-      url              TEXT NOT NULL DEFAULT '',
-      posted_at        TEXT,
-      fetched_at       TEXT NOT NULL,
-      status           TEXT NOT NULL DEFAULT 'new'
-                       CHECK (status IN ('new','favorite','applied','hidden')),
-      user_tags        TEXT NOT NULL DEFAULT '[]',
-      search_text      TEXT NOT NULL DEFAULT '',
-      description      TEXT NOT NULL DEFAULT '',
-      UNIQUE (board_id, external_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_listings_board ON listings(board_id);
-    CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
-
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS followed_companies (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS pinned_countries (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      created_at TEXT NOT NULL
-    );
-  `);
-
-  // Repair databases broken by the interrupted boards rebuild: the listings
-  // foreign key may still point at the dropped "boards_old" table, which
-  // makes every INSERT fail with "no such table: main.boards_old".
-  const listingsSql = (
-    db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'listings'").get() as
-      | { sql: string }
-      | undefined
-  )?.sql;
-  if (listingsSql && listingsSql.includes("boards_old")) {
-    db.exec("PRAGMA foreign_keys = OFF");
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const nowSql = (
-        db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'listings'").get() as
-          | { sql: string }
-          | undefined
-      )?.sql;
-      if (nowSql && nowSql.includes("boards_old")) {
-        console.log("[jobradar:migrate] repairing listings foreign key (boards_old → boards)");
-        db.exec(`CREATE TABLE listings_fixed (
-          id               INTEGER PRIMARY KEY AUTOINCREMENT,
-          board_id         INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
-          external_id      TEXT NOT NULL,
-          title            TEXT NOT NULL,
-          company          TEXT NOT NULL DEFAULT '',
-          location         TEXT NOT NULL DEFAULT '',
-          is_remote        INTEGER NOT NULL DEFAULT 0,
-          visa_sponsorship INTEGER NOT NULL DEFAULT 0,
-          remote_scope     TEXT,
-          tags             TEXT NOT NULL DEFAULT '[]',
-          skills           TEXT NOT NULL DEFAULT '[]',
-          url              TEXT NOT NULL DEFAULT '',
-          posted_at        TEXT,
-          fetched_at       TEXT NOT NULL,
-          status           TEXT NOT NULL DEFAULT 'new'
-                           CHECK (status IN ('new','favorite','applied','hidden')),
-           user_tags        TEXT NOT NULL DEFAULT '[]',
-           search_text      TEXT NOT NULL DEFAULT '',
-           description      TEXT NOT NULL DEFAULT '',
-           UNIQUE (board_id, external_id)
-         )`);
-         // Only copy `description` when the source table already has it
-         // (a pre-feature DB stuck in this broken state doesn't) — otherwise
-         // the SELECT would throw and brick startup.
-         const sourceCols = (
-           db.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>
-         ).map((c) => c.name);
-         const hasDesc = sourceCols.includes("description");
-         const copyCols = hasDesc
-           ? "id, board_id, external_id, title, company, location, is_remote, visa_sponsorship, remote_scope, tags, skills, url, posted_at, fetched_at, status, user_tags, search_text, description"
-           : "id, board_id, external_id, title, company, location, is_remote, visa_sponsorship, remote_scope, tags, skills, url, posted_at, fetched_at, status, user_tags, search_text";
-         db.exec(`INSERT INTO listings_fixed (${copyCols}) SELECT ${copyCols} FROM listings`);
-        db.exec("DROP TABLE listings");
-        db.exec("ALTER TABLE listings_fixed RENAME TO listings");
-        db.exec("CREATE INDEX IF NOT EXISTS idx_listings_board ON listings(board_id)");
-        db.exec("CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status)");
-      }
-      db.exec("COMMIT");
-    } catch (err) {
-      db.exec("ROLLBACK");
-      throw err;
-    } finally {
-      db.exec("PRAGMA foreign_keys = ON");
-    }
   }
+  return inserted;
+}
 
-  // lightweight column migrations for pre-existing databases
-  const listingCols = (
-    db.prepare("PRAGMA table_info(listings)").all() as Array<{ name: string }>
-  ).map((c) => c.name);
-  if (!listingCols.includes("skills")) {
-    db.exec("ALTER TABLE listings ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'");
+/** External ids of a board's rows that already carry an enriched field. */
+export async function knownEnrichedExternalIds(
+  boardId: number,
+  by: "description" | "skills",
+): Promise<Set<string>> {
+  const filter = by === "description" ? "description <> ''" : "skills <> '[]'";
+  const rows = await q<{ external_id: string }>(
+    `select external_id from listings where board_id = $1 and ${filter}`,
+    [boardId],
+  );
+  return new Set(rows.map((r) => r.external_id));
+}
+
+export interface EnrichPatch {
+  externalId: string;
+  searchText: string;
+  skills: string;
+  description: string;
+  visaSponsorship?: number;
+  company?: string;
+  postedAt?: string | null;
+  deadline?: string | null;
+  location?: string;
+  tags?: string;
+}
+
+// column → value extractor; a column is written when any patch defines it
+const ENRICH_COLUMNS: Array<[string, (p: EnrichPatch) => unknown]> = [
+  ["search_text", (p) => p.searchText],
+  ["skills", (p) => p.skills],
+  ["visa_sponsorship", (p) => p.visaSponsorship],
+  ["company", (p) => p.company],
+  ["posted_at", (p) => p.postedAt],
+  ["deadline", (p) => p.deadline],
+  ["location", (p) => p.location],
+  ["tags", (p) => p.tags],
+  ["description", (p) => p.description],
+];
+
+/**
+ * Persist enrichment results onto already-stored rows (the upsert in
+ * insertListings never overwrites existing rows, so adapters write
+ * descriptions/skills/flags back explicitly). Column names come from the
+ * fixed allowlist above — never from user input.
+ */
+export async function persistEnrichment(
+  boardId: number,
+  patches: EnrichPatch[],
+  opts: { onlyWhenUnenriched?: boolean } = {},
+): Promise<void> {
+  if (patches.length === 0) return;
+  const columns = ENRICH_COLUMNS.filter(([, get]) =>
+    patches.some((p) => get(p) !== undefined),
+  );
+  const setClause = columns.map(([col], n) => `${col} = $${n + 1}`).join(", ");
+  const extraWhere = opts.onlyWhenUnenriched ? " and skills = '[]'" : "";
+  for (const p of patches) {
+    const values = columns.map(([, get]) => get(p));
+    await run(
+      `update listings set ${setClause} where board_id = $${columns.length + 1} and external_id = $${columns.length + 2}${extraWhere}`,
+      [...values, boardId, p.externalId],
+    );
   }
-  if (!listingCols.includes("remote_scope")) {
-    db.exec("ALTER TABLE listings ADD COLUMN remote_scope TEXT");
-  }
-  if (!listingCols.includes("description")) {
-    db.exec("ALTER TABLE listings ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+}
+
+// ── Followed companies ─────────────────────────────────────────────────────
+
+/** All followed company names, alphabetical (case-insensitive). */
+export async function listFollowedCompanies(): Promise<string[]> {
+  const rows = await q<{ name: string }>(
+    "select name from followed_companies order by lower(name)",
+  );
+  return rows.map((r) => r.name);
+}
+
+// ── Pinned countries ───────────────────────────────────────────────────────
+
+/** All pinned country names, alphabetical (case-insensitive). */
+export async function listPinnedCountries(): Promise<string[]> {
+  const rows = await q<{ name: string }>(
+    "select name from pinned_countries order by lower(name)",
+  );
+  return rows.map((r) => r.name);
+}
+
+// ── Row mappers ────────────────────────────────────────────────────────────
+
+interface BoardRow {
+  id: number;
+  name: string;
+  type: string;
+  url: string;
+  enabled: number;
+  filter_keywords: string;
+  last_fetched_at: string | null;
+  last_status: string | null;
+  fetch_interval_hours: number;
+}
+
+export function rowToBoard(r: BoardRow): Board {
+  return {
+    id: r.id,
+    name: r.name,
+    type: r.type as BoardType,
+    url: r.url,
+    enabled: r.enabled === 1,
+    filterKeywords: safeParse(r.filter_keywords),
+    lastFetchedAt: r.last_fetched_at,
+    lastStatus: r.last_status,
+    fetchIntervalHours: r.fetch_interval_hours,
+  };
+}
+
+interface ListingRow {
+  id: number;
+  board_id: number;
+  board_name?: string;
+  external_id: string;
+  title: string;
+  company: string;
+  location: string;
+  is_remote: number;
+  visa_sponsorship: number;
+  remote_scope?: string | null;
+  tags: string;
+  skills?: string;
+  url: string;
+  posted_at: string | null;
+  deadline?: string | null;
+  fetched_at: string;
+  status: string;
+  user_tags: string;
+  search_text?: string;
+  description?: string;
+  board_filter_keywords?: string;
+}
+
+export function rowToListing(r: ListingRow): Listing & {
+  boardName: string;
+  boardFilterKeywords: string[];
+  searchText: string;
+  description: string;
+} {
+  return {
+    id: r.id,
+    boardId: r.board_id,
+    boardName: r.board_name ?? "",
+    externalId: r.external_id,
+    title: r.title,
+    company: r.company,
+    location: r.location,
+    isRemote: r.is_remote === 1,
+    visaSponsorship: r.visa_sponsorship === 1,
+    remoteScope: (r.remote_scope as "anywhere" | "restricted" | null) ?? null,
+    tags: safeParse(r.tags),
+    skills: safeParse(r.skills ?? "[]"),
+    url: r.url,
+    postedAt: r.posted_at,
+    deadline: r.deadline ?? null,
+    fetchedAt: r.fetched_at,
+    status: r.status as ListingStatus,
+    userTags: safeParse(r.user_tags),
+    boardFilterKeywords: safeParse(r.board_filter_keywords ?? "[]"),
+    searchText: r.search_text ?? "",
+    description: r.description ?? "",
+  };
+}
+
+function safeParse(json: string): string[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -257,12 +464,44 @@ const SEED_BOARDS: Array<{
     url: "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
     keywords: ["java", "spring"],
   },
+
+  // ── International sources ─────────────────────────────────────────────────
+  // Broad tech ingestion by design: each board carries its source's tech/dev
+  // category (no java-only narrowing at fetch time — Java filtering happens in
+  // the UI via global keywords and skill facets). Descriptions come from the
+  // feed directly (Jobicy) or via bounded detail enrichment (Arc, Relocate.me,
+  // Reed) so skills extraction has material at upsert time.
   {
-    name: "Jobicy (Java tag)",
-    type: "rss",
-    url: "https://jobicy.com/feed/job-tag/java",
+    // v2 API, industry=engineering = Jobicy's "Software Engineering" category
+    // (replaces the old "Jobicy (Java tag)" RSS seed that 403'd)
+    name: "Jobicy",
+    type: "api",
+    url: "https://jobicy.com/api/v2/remote-jobs?count=50&industry=engineering",
     keywords: [],
-    enabled: false, // currently returns 403 to server-side fetchers; enable to retry
+  },
+  {
+    // __NEXT_DATA__ listing; detail enrichment adds description + visa flag +
+    // company (vetted jobs). requiredCountries=[] maps to "Anywhere".
+    name: "Arc.dev",
+    type: "scrape",
+    url: "https://arc.dev/remote-jobs",
+    keywords: [],
+  },
+  {
+    // relocation-native EU/UK board; SSR cards + JSON-LD detail enrichment
+    name: "Relocate.me",
+    type: "scrape",
+    url: "https://relocate.me/international-jobs",
+    keywords: [],
+  },
+  {
+    // UK board with a free jobseeker API — needs REED_API_KEY (Basic auth),
+    // so seeded disabled; enable once the key is configured
+    name: "Reed (UK)",
+    type: "api",
+    url: "https://www.reed.co.uk/api/1.0/search?keywords=developer&resultsToTake=100",
+    keywords: [],
+    enabled: false,
   },
 
   // ── Japan sources ───────────────────────────────────────────────────────
@@ -312,6 +551,103 @@ const SEED_BOARDS: Array<{
     name: "Brain Station 23 (careers)",
     type: "scrape",
     url: "https://brainstation-23.easy.jobs/",
+    keywords: [],
+  },
+  // easy.jobs tenants — BD tech companies on the country's dominant hiring
+  // platform. Tenants with zero current openings render an explicit empty
+  // state (fetched as "ok · 0"), and pick up jobs automatically when posted.
+  {
+    name: "Vivasoft (careers)",
+    type: "scrape",
+    url: "https://vivasoft.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "Chaldal (careers)",
+    type: "scrape",
+    url: "https://chaldal.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "Sheba Platform (careers)",
+    type: "scrape",
+    url: "https://sheba.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "Datasoft Systems (careers)",
+    type: "scrape",
+    url: "https://datasoft.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "KONA Software Lab (careers)",
+    type: "scrape",
+    url: "https://konasl.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "Pathao (careers)",
+    type: "scrape",
+    url: "https://pathao.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "LEADS Corporation (careers)",
+    type: "scrape",
+    url: "https://leads.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "Dream 71 (careers)",
+    type: "scrape",
+    url: "https://dream71.easy.jobs/",
+    keywords: [],
+  },
+  {
+    name: "Shohoz (careers)",
+    type: "scrape",
+    url: "https://shohoz.easy.jobs/",
+    keywords: [],
+  },
+  // single-company career feeds (company name filled from the board name)
+  {
+    name: "Enosis Solutions (careers)",
+    type: "rss",
+    url: "https://careers.enosisbd.com/jobs.rss",
+    keywords: [],
+  },
+  {
+    name: "Southtech Group (careers)",
+    type: "rss",
+    url: "https://career.southtechgroup.com/feed/",
+    keywords: [],
+  },
+  {
+    name: "Riseup Labs (careers)",
+    type: "scrape",
+    url: "https://riseuplabs.com/jobs/",
+    keywords: [],
+  },
+  // IoT/telecom tech company hiring via SmartRecruiters (host dispatch above)
+  {
+    name: "Bondstein Technologies (careers)",
+    type: "api",
+    url: "https://api.smartrecruiters.com/v1/companies/BondsteinTechnologiesLtd/postings",
+    keywords: [],
+  },
+  {
+    name: "Daraz (careers)",
+    type: "scrape",
+    url: "https://daraz.easy.jobs/",
+    keywords: [],
+  },
+  // general BD portal — newest ~25 jobs per fetch, filtered to tech titles;
+  // each job names its real hiring company, covering many employers at once
+  {
+    name: "Skill.jobs (tech)",
+    type: "scrape",
+    url: "https://skill.jobs/browse-jobs",
     keywords: [],
   },
   {
@@ -404,126 +740,3 @@ const SEED_BOARDS: Array<{
     keywords: ["java", "backend"],
   },
 ];
-
-function seed(db: DatabaseSync) {
-  // Idempotent: insert any seed boards missing from this database,
-  // leaving user-added/edited boards untouched.
-  const ins = db.prepare(
-    "INSERT OR IGNORE INTO boards (name, type, url, filter_keywords, enabled) VALUES (?, ?, ?, ?, ?)",
-  );
-  for (const b of SEED_BOARDS) {
-    ins.run(b.name, b.type, b.url, JSON.stringify(b.keywords), b.enabled === false ? 0 : 1);
-  }
-}
-
-// ── Followed companies ─────────────────────────────────────────────────────
-
-/** All followed company names, alphabetical (case-insensitive). */
-export function listFollowedCompanies(db: DatabaseSync): string[] {
-  return (
-    db.prepare("SELECT name FROM followed_companies ORDER BY name COLLATE NOCASE").all() as Array<{
-      name: string;
-    }>
-  ).map((r) => r.name);
-}
-
-// ── Pinned countries ───────────────────────────────────────────────────────
-
-/** All pinned country names, alphabetical (case-insensitive). */
-export function listPinnedCountries(db: DatabaseSync): string[] {
-  return (
-    db.prepare("SELECT name FROM pinned_countries ORDER BY name COLLATE NOCASE").all() as Array<{
-      name: string;
-    }>
-  ).map((r) => r.name);
-}
-
-// ── Row mappers ─────────────────────────────────────────────────────────────
-
-interface BoardRow {
-  id: number;
-  name: string;
-  type: string;
-  url: string;
-  enabled: number;
-  filter_keywords: string;
-  last_fetched_at: string | null;
-  last_status: string | null;
-  fetch_interval_hours: number;
-}
-
-export function rowToBoard(r: BoardRow): Board {
-  return {
-    id: r.id,
-    name: r.name,
-    type: r.type as BoardType,
-    url: r.url,
-    enabled: r.enabled === 1,
-    filterKeywords: safeParse(r.filter_keywords),
-    lastFetchedAt: r.last_fetched_at,
-    lastStatus: r.last_status,
-    fetchIntervalHours: r.fetch_interval_hours,
-  };
-}
-
-interface ListingRow {
-  id: number;
-  board_id: number;
-  board_name?: string;
-  external_id: string;
-  title: string;
-  company: string;
-  location: string;
-  is_remote: number;
-  visa_sponsorship: number;
-  tags: string;
-  skills?: string;
-  remote_scope?: string | null;
-  url: string;
-  posted_at: string | null;
-  fetched_at: string;
-  status: string;
-  user_tags: string;
-  search_text?: string;
-  description?: string;
-  board_filter_keywords?: string;
-}
-
-export function rowToListing(r: ListingRow): Listing & {
-  boardName: string;
-  boardFilterKeywords: string[];
-  searchText: string;
-  description: string;
-} {
-  return {
-    id: r.id,
-    boardId: r.board_id,
-    boardName: r.board_name ?? "",
-    externalId: r.external_id,
-    title: r.title,
-    company: r.company,
-    location: r.location,
-    isRemote: r.is_remote === 1,
-    visaSponsorship: r.visa_sponsorship === 1,
-    remoteScope: (r.remote_scope as "anywhere" | "restricted" | null) ?? null,
-    tags: safeParse(r.tags),
-    skills: safeParse(r.skills ?? "[]"),
-    url: r.url,
-    postedAt: r.posted_at,
-    fetchedAt: r.fetched_at,
-    status: r.status as ListingStatus,
-    userTags: safeParse(r.user_tags),
-    boardFilterKeywords: safeParse(r.board_filter_keywords ?? "[]"),
-    searchText: r.search_text ?? "",
-    description: r.description ?? "",
-  };
-}
-
-function safeParse(json: string): string[] {
-  try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) ? v.map(String) : [];
-  } catch {
-    return [];
-  }
-}

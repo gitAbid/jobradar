@@ -1,5 +1,37 @@
 import type { NormalizedListing } from "@/lib/types";
 
+// ── RSS feed extras (BD career feeds) ──────────────────────────────────────
+// Remote-job feeds carry no structured location; company career feeds
+// (Enosis/Pinpoint, WordPress job portals like Southtech's) structure their
+// content with "Label: value" lines instead. Detecting those unlocks real
+// location, application-deadline and remote-flag data for such feeds.
+
+export interface FeedExtras {
+  location: string;
+  deadline: string | null;
+  isRemote: boolean;
+}
+
+/** Line-anchored "Location:"/"Application Deadline:" extraction from feed content HTML. */
+export function extractFeedExtras(title: string, contentHtml: string): FeedExtras | null {
+  const text = contentHtml
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|li|div|h[1-6]|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+  const location = /(?:^|\n)\s*Location:\s*([^\n]+)/i.exec(text)?.[1]?.trim();
+  if (!location) return null;
+  const deadlineRaw = /(?:^|\n)\s*Application Deadline:\s*([^\n]+)/i.exec(text)?.[1]?.trim();
+  const deadlineDate = deadlineRaw ? new Date(deadlineRaw) : null;
+  return {
+    location,
+    deadline:
+      deadlineDate && !Number.isNaN(deadlineDate.getTime()) ? deadlineDate.toISOString() : null,
+    isRemote: /remote|work from home/i.test(`${title} ${text}`),
+  };
+}
+
 // ── Greenhouse company boards ──────────────────────────────────────────────
 // GET https://boards-api.greenhouse.io/v1/boards/{company}/jobs?content=true
 // → { jobs: [...] }
@@ -200,6 +232,7 @@ export function normalizeBdjobs(payload: unknown): NormalizedListing[] {
       .slice(0, 6),
     url: j.Jobid ? `https://jobs.bdjobs.com/jobdetails.asp?id=${j.Jobid}&ln=1` : "",
     postedAt: toIsoDate(j.publishDate),
+    deadline: toIsoDate(j.deadlineDB ?? j.deadline),
     description: stripHtml(String(j.jobDescription ?? j.eduRec ?? "")),
   }));
 }
@@ -253,6 +286,7 @@ export function normalizeTekarsh(payload: unknown): NormalizedListing[] {
         ].slice(0, 10),
         url: j.slug ? `https://tekarsh.com/career/job/${j.slug}` : "",
         postedAt: toIsoDate(j.postedDate),
+        deadline: toIsoDate(j.deadline),
         description: stripHtml(
           `${asArray(j.introduction)} ${asArray(j.responsibilities)} ${asArray(j.qualifications)}`,
         ),
@@ -279,7 +313,12 @@ export function normalizeSmartRecruiters(payload: unknown): NormalizedListing[] 
       ? ((payload as { content: SmartRecruitersPosting[] }).content)
       : [];
   return postings.map((p) => {
-    const loc = [p.location?.city, p.location?.country].filter(Boolean).join(", ");
+    // SmartRecruiters country codes are ISO-style ("bd", "de") — expand the
+    // lowercase country slug so locations display as "Dhaka, Bangladesh"
+    const country = (p.location?.country ?? "").trim();
+    const loc = [p.location?.city, /^(bd)$/i.test(country) ? "Bangladesh" : country]
+      .filter(Boolean)
+      .join(", ");
     return {
       externalId: String(p.id ?? idFromUrl(p.name ?? "")),
       title: String(p.name ?? "").trim(),
@@ -677,4 +716,114 @@ export function normalizeHimalayas(payload: unknown): NormalizedListing[] {
     postedAt: toIsoDate(j.postedAt),
     description: stripHtml(String(j.description ?? "")),
   }));
+}
+
+// ── Jobicy ─────────────────────────────────────────────────────────────────
+// GET https://jobicy.com/api/v2/remote-jobs?count=50&industry=engineering
+//   → { jobs: [{ id, url, jobTitle, companyName, jobGeo, jobType[], jobLevel,
+//                jobDescription (HTML), pubDate, ... }] }
+// `industry=engineering` is Jobicy's "Software Engineering" category and the
+// whole board is remote-only, so the feed doubles as the tech filter.
+
+interface JobicyJob {
+  id?: number | string;
+  url?: string;
+  jobTitle?: string;
+  companyName?: string;
+  jobGeo?: string;
+  jobType?: string[];
+  jobLevel?: string;
+  jobExcerpt?: string;
+  jobDescription?: string;
+  pubDate?: string;
+}
+
+export function normalizeJobicy(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { jobs?: unknown }).jobs)
+      ? ((payload as { jobs: JobicyJob[] }).jobs)
+      : [];
+  return jobs.map((j) => ({
+    externalId: String(j.id ?? idFromUrl(j.url ?? j.jobTitle ?? "")),
+    title: String(j.jobTitle ?? "").trim(),
+    company: String(j.companyName ?? "").trim(),
+    // jobGeo carries the eligibility region ("USA", "Anywhere in the World",
+    // "European Union") — detectRemoteScope classifies regions as restricted
+    location: String(j.jobGeo ?? "").trim() || "Remote",
+    isRemote: true,
+    visaSponsorship: detectVisaSponsorship(j.jobDescription, j.jobTitle),
+    tags: [...(j.jobType ?? []), ...(j.jobLevel ? [j.jobLevel] : [])].map(String).slice(0, 6),
+    url: String(j.url ?? ""),
+    postedAt: toIsoDate(j.pubDate),
+    description: stripHtml(String((j.jobDescription || j.jobExcerpt) ?? "")),
+  }));
+}
+
+// ── Reed (UK) ──────────────────────────────────────────────────────────────
+// GET https://www.reed.co.uk/api/1.0/search?keywords=developer&resultsToTake=100
+//   (HTTP Basic auth — API key as username, empty password; free key from
+//   reed.co.uk/developers/Jobseeker)
+//   → { totalResults, results: [{ jobId, employerName, jobTitle, locationName,
+//        minimumSalary, maximumSalary, currency, datePosted "dd/MM/yyyy",
+//        jobUrl }] }
+// The search payload carries no description — the fetch layer enriches new
+// jobs from GET /api/1.0/jobs/{jobId} → { jobDescription }.
+
+interface ReedJob {
+  jobId?: number | string;
+  employerName?: string;
+  jobTitle?: string;
+  locationName?: string;
+  minimumSalary?: number | null;
+  maximumSalary?: number | null;
+  currency?: string | null;
+  datePosted?: string;
+  jobUrl?: string;
+}
+
+const REED_CURRENCY_SYMBOLS: Record<string, string> = { GBP: "£", USD: "$", EUR: "€" };
+
+/** "£45k ~ £60k"-style salary tag, mirroring the JapanDev JPY range format. */
+function reedSalaryTag(min?: number | null, max?: number | null, currency?: string | null): string | null {
+  if (!min && !max) return null;
+  const symbol = REED_CURRENCY_SYMBOLS[currency ?? ""] ?? `${currency ?? ""} `;
+  const fmt = (v?: number | null) => (v ? `${symbol}${Math.round(v / 1000)}k` : "?");
+  return `${fmt(min)} ~ ${fmt(max)}`;
+}
+
+/** Reed posts dates as dd/MM/yyyy, which `new Date()` mangles — split manually. */
+export function reedDateToIso(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(input.trim());
+  if (!m) return null;
+  const d = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+export function normalizeReed(payload: unknown): NormalizedListing[] {
+  const jobs =
+    typeof payload === "object" && payload !== null && Array.isArray((payload as { results?: unknown }).results)
+      ? ((payload as { results: ReedJob[] }).results)
+      : [];
+  return jobs.map((j) => {
+    const salary = reedSalaryTag(j.minimumSalary, j.maximumSalary, j.currency);
+    return {
+      externalId: String(j.jobId ?? idFromUrl(j.jobUrl ?? j.jobTitle ?? "")),
+      title: String(j.jobTitle ?? "").trim(),
+      company: String(j.employerName ?? "").trim(),
+      location: String(j.locationName ?? "").trim(),
+      isRemote: /remote/i.test(`${j.jobTitle ?? ""} ${j.locationName ?? ""}`),
+      visaSponsorship: false, // detail enrichment detects visa wording in the JD
+      tags: salary ? [salary] : [],
+      url: String(j.jobUrl ?? ""),
+      postedAt: reedDateToIso(j.datePosted),
+      description: "",
+    } satisfies NormalizedListing;
+  });
+}
+
+/** Full JD text from the Reed job-details endpoint. */
+export function parseReedDetail(payload: unknown): string {
+  const job = typeof payload === "object" && payload !== null ? (payload as { jobDescription?: unknown }) : {};
+  return stripHtml(String(job.jobDescription ?? ""));
 }

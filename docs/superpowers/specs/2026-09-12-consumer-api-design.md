@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-12
 **Status:** Implemented (see plan addendum for the mid-flight Postgres pivot —
-storage landed on `postgres.js`/Supabase via a `KeyStore` port, not `node:sqlite`)
+storage landed on `postgres.js`/Neon via a `KeyStore` port, not `node:sqlite`)
 
 ## Goal
 

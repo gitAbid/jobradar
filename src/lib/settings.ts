@@ -1,24 +1,24 @@
-import { getDb } from "@/db";
+import { qOne, run } from "@/db";
 
-export function getSetting(key: string): string | null {
-  const row = getDb()
-    .prepare("SELECT value FROM app_settings WHERE key = ?")
-    .get(key) as { value: string } | undefined;
+export async function getSetting(key: string): Promise<string | null> {
+  const row = await qOne<{ value: string }>(
+    "select value from app_settings where key = $1",
+    [key],
+  );
   return row?.value ?? null;
 }
 
-export function setSetting(key: string, value: string): void {
-  getDb()
-    .prepare(
-      "INSERT INTO app_settings (key, value) VALUES (?, ?) " +
-        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    )
-    .run(key, value);
+export async function setSetting(key: string, value: string): Promise<void> {
+  await run(
+    "insert into app_settings (key, value) values ($1, $2) " +
+      "on conflict (key) do update set value = excluded.value",
+    [key, value],
+  );
 }
 
 /** Global skill keywords, e.g. ["java","spring boot","senior","lead"] */
-export function getGlobalKeywords(): string[] {
-  const raw = getSetting("global_keywords");
+export async function getGlobalKeywords(): Promise<string[]> {
+  const raw = await getSetting("global_keywords");
   if (!raw) return ["java", "spring boot", "senior", "lead"]; // defaults for Abid
   try {
     const v = JSON.parse(raw);
@@ -28,16 +28,16 @@ export function getGlobalKeywords(): string[] {
   }
 }
 
-export function setGlobalKeywords(keywords: string[]): void {
-  setSetting("global_keywords", JSON.stringify(keywords));
+export async function setGlobalKeywords(keywords: string[]): Promise<void> {
+  await setSetting("global_keywords", JSON.stringify(keywords));
 }
 
-export function getRefreshIntervalHours(): number {
-  const raw = getSetting("refresh_interval_hours");
+export async function getRefreshIntervalHours(): Promise<number> {
+  const raw = await getSetting("refresh_interval_hours");
   const n = raw ? Number(raw) : NaN;
   return Number.isFinite(n) && n >= 1 ? n : 4;
 }
 
-export function isSoundEnabled(): boolean {
-  return getSetting("sound_enabled") !== "false";
+export async function isSoundEnabled(): Promise<boolean> {
+  return (await getSetting("sound_enabled")) !== "false";
 }

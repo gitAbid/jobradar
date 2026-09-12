@@ -1,4 +1,4 @@
-import { getDb } from "@/db";
+import { q, run } from "@/db";
 import { getSetting, setSetting } from "@/lib/settings";
 import { extractSkills } from "@/lib/skills";
 
@@ -9,17 +9,13 @@ import { extractSkills } from "@/lib/skills";
  */
 export const SKILLS_VERSION = "2";
 
-export function backfillSkillsIfNeeded(): void {
-  if (getSetting("skills_version") === SKILLS_VERSION) return;
+export async function backfillSkillsIfNeeded(): Promise<void> {
+  if ((await getSetting("skills_version")) === SKILLS_VERSION) return;
 
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT id, title, tags, search_text FROM listings WHERE skills = '[]'`,
-    )
-    .all() as Array<{ id: number; title: string; tags: string; search_text: string }>;
+  const rows = await q<{ id: number; tags: string; search_text: string }>(
+    `select id, tags, search_text from listings where skills = '[]'`,
+  );
 
-  const update = db.prepare(`UPDATE listings SET skills = ? WHERE id = ?`);
   let filled = 0;
   for (const r of rows) {
     let tags: string[] = [];
@@ -35,12 +31,12 @@ export function backfillSkillsIfNeeded(): void {
       description: r.search_text,
     });
     if (skills.length > 0) {
-      update.run(JSON.stringify(skills), r.id);
+      await run(`update listings set skills = $1 where id = $2`, [JSON.stringify(skills), r.id]);
       filled++;
     }
   }
 
-  setSetting("skills_version", SKILLS_VERSION);
+  await setSetting("skills_version", SKILLS_VERSION);
   console.log(
     `[jobradar] skills backfill v${SKILLS_VERSION}: ${filled}/${rows.length} empty listings enriched`,
   );

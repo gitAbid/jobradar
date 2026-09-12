@@ -1594,7 +1594,7 @@ Kill the dev server. Report results; the feature is complete. No further commit 
 
 While Tasks 1–5 were executing, the working tree gained a large concurrent
 rewrite: the persistence layer moved from `node:sqlite` to Postgres
-(`postgres.js` against Supabase, `q`/`qOne`/`run` helpers in `src/db/index.ts`,
+(`postgres.js` against Neon, `q`/`qOne`/`run` helpers in `src/db/index.ts`,
 async module-level DB functions). The plan's SQLite-specific steps are amended:
 
 - **Pure units unchanged:** `job-view` pageSize, `query.ts`, `serialize.ts`
