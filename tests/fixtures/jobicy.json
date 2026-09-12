@@ -1,0 +1,21 @@
+{
+  "apiVersion": "2.2.16",
+  "jobCount": 1,
+  "jobs": [
+    {
+      "id": 152061,
+      "url": "https://jobicy.com/jobs/152061-backend-java-engineer-us-remote",
+      "jobSlug": "152061-backend-java-engineer-us-remote",
+      "jobTitle": "Backend Java Engineer (US Remote)",
+      "companyName": "PerfectServe",
+      "companyLogo": "https://jobicy.com/data/logo.jpg",
+      "jobIndustry": ["Software Engineering"],
+      "jobType": ["Full-Time"],
+      "jobGeo": "USA",
+      "jobLevel": "Any",
+      "jobExcerpt": "What is PerfectServe? PerfectServe is a leading provider of clinical communication solutions.",
+      "jobDescription": "<h3><strong>About us</strong></h3><p>Java 17 + Spring Boot platform running on Kubernetes. We offer visa sponsorship for exceptional candidates.</p>",
+      "pubDate": "2026-08-29T17:27:09+00:00"
+    }
+  ]
+}

@@ -42,3 +42,7 @@ next-env.d.ts
 
 # local database
 data/
+
+# local agent/tooling caches
+.video_agent/
+.zcode/
