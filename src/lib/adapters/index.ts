@@ -363,6 +363,7 @@ async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise
 
   const { renderPage } = await import("@/lib/adapters/browser");
   let enriched = 0;
+  let firstFailure: string | undefined;
   const stopAt = enrichStopAt();
   for (const l of listings) {
     if (enriched >= 20 || Date.now() >= stopAt) break;
@@ -374,9 +375,13 @@ async function fetchTokyoDev(board: Pick<Board, "id" | "name" | "url">): Promise
       if (detail.postedAt) l.postedAt = detail.postedAt;
       if (detail.location) l.location = `${detail.location}, Japan`;
       enriched++;
-    } catch {
+    } catch (e) {
       // Cloudflare challenge or timeout — try again next refresh
+      firstFailure ??= e instanceof Error ? e.message : String(e);
     }
+  }
+  if (firstFailure) {
+    console.error(`[jobradar] tokyodev: enrichment failing (${firstFailure})`);
   }
   if (enriched > 0) {
     await persistEnrichment(
@@ -661,6 +666,7 @@ async function fetchBdjobs(
   const { renderText } = await import("@/lib/adapters/browser");
   const skillsKnown = await knownEnrichedExternalIds(board.id, "skills");
   let enriched = 0;
+  let firstFailure: string | undefined;
   const stopAt = enrichStopAt();
   for (const l of all) {
     if (enriched >= 50 || Date.now() >= stopAt) break;
@@ -672,11 +678,15 @@ async function fetchBdjobs(
         l.description = cleaned;
         enriched++;
       }
-    } catch {
+    } catch (e) {
       // detail page failed — keep list-API description
+      firstFailure ??= e instanceof Error ? e.message : String(e);
     }
   }
   // persist enriched text/skills onto existing rows immediately
+  if (firstFailure) {
+    console.error(`[jobradar] bdjobs: enrichment failing (${firstFailure})`);
+  }
   if (enriched > 0) {
     await persistEnrichment(
       board.id,
