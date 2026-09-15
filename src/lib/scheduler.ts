@@ -17,7 +17,14 @@ export async function startScheduler(): Promise<void> {
 
   if (globalThis.__jobradarCron) return;
 
-  const hours = Math.max(1, Math.floor(await getRefreshIntervalHours()));
+  // the interval lives in the DB; when both the remote and the local mirror
+  // are unavailable, fall back to the default instead of failing startup
+  let hours = 4;
+  try {
+    hours = Math.max(1, Math.floor(await getRefreshIntervalHours()));
+  } catch (err) {
+    console.warn("[jobradar] could not read refresh interval, using default:", err instanceof Error ? err.message : err);
+  }
   globalThis.__jobradarCron = new Cron(`0 */${hours} * * *`, { name: "jobradar-refresh" }, () => {
     // null = a manual refresh is still in flight; skip this tick
     void refreshAll(undefined, "scheduled").catch(() => {

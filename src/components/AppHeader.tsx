@@ -4,6 +4,7 @@ import { KeyRound, LayoutDashboard, MapPin, Radar, Send, SlidersHorizontal, Star
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { isNavLinkActive } from "@/lib/navigation";
+import { DbStatusBadge } from "@/components/DbStatusBadge";
 
 const NAV_LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -64,6 +65,10 @@ export function AppHeader() {
             <NavItem key={link.href} {...link} />
           ))}
         </nav>
+
+        <div className="ml-auto flex items-center lg:ml-3">
+          <DbStatusBadge />
+        </div>
       </div>
 
       <nav

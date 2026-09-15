@@ -1,142 +1,214 @@
-import postgres from "postgres";
 import type { Board, BoardType, Listing, ListingStatus } from "@/lib/types";
+import {
+  classifyRemoteError,
+  isReadStatement,
+  translateToSqlite,
+} from "@/db/translate";
+import {
+  isRemoteConfigured,
+  remoteQuery,
+  remoteRun,
+  remoteRunReturning,
+  setRemoteHarness,
+  type RemoteHarness,
+} from "@/db/remote";
+import { getBreaker } from "@/db/remote-health";
+import { getLocalStore, type LocalStore } from "@/db/local-store";
+import { drainOutbox, ensureFreshLocal } from "@/db/sync";
 
-// ── Postgres connection (Neon; singleton survives HMR via globalThis) ──
+// ── Local-first query router ───────────────────────────────────────────────
+//
+// Every read/write in the app funnels through q/qOne/run. The routing policy:
+//
+//   reads    → memory cache → on-device SQLite (primary) → remote, with the
+//              mirror refreshed from Neon lazily (initial + 2min catch-up)
+//   writes   → on-device SQLite immediately (authority), then write-through
+//              to Neon; if Neon is unreachable or over limits the statement
+//              is queued in the local outbox and replayed FIFO on recovery
+//
+// A circuit breaker (remote-health.ts) trips on connection/limit failures and
+// re-probes after a backoff window, so a dead or quota-capped database never
+// takes the app down.
+
+export { getDb } from "@/db/remote";
+export { dbStatus, initBackgroundSync } from "@/db/sync";
+export type { DbStatus } from "@/db/sync";
+
+const MEMORY_TTL_MS = 10_000;
+const MEMORY_MAX_ENTRIES = 300;
+
+interface CacheEntry {
+  at: number;
+  gen: number;
+  rows: Record<string, unknown>[];
+}
 
 declare const globalThis: {
-  __jobradarSql?: postgres.Sql;
-  __jobradarSchemaReady?: Promise<void>;
+  __jobradarCache?: Map<string, CacheEntry>;
+  __jobradarCacheGen?: number;
 };
 
-export function getDb(): postgres.Sql {
-  if (!globalThis.__jobradarSql) {
-    const url = process.env.DATABASE_URL;
-    if (!url) {
-      throw new Error(
-        "DATABASE_URL is not set — point it at the Neon pooled connection string",
-      );
-    }
-    globalThis.__jobradarSql = postgres(url, {
-      // required behind Neon's connection pooler (pgbouncer-style)
-      prepare: false,
-      max: 5,
-      idle_timeout: 20,
-      connect_timeout: 10,
-    });
-  }
-  return globalThis.__jobradarSql;
+function cache(): Map<string, CacheEntry> {
+  globalThis.__jobradarCache ??= new Map();
+  return globalThis.__jobradarCache;
 }
+
+function cacheGen(): number {
+  globalThis.__jobradarCacheGen ??= 0;
+  return globalThis.__jobradarCacheGen;
+}
+
+function invalidateCache(): void {
+  globalThis.__jobradarCacheGen = cacheGen() + 1;
+  globalThis.__jobradarCache?.clear();
+}
+
+/** Escape hatch: LOCAL_FIRST=0 restores plain remote-direct behavior. */
+export { isLocalFirstEnabled } from "@/db/local-store";
+
+async function localStore(): Promise<LocalStore | null> {
+  return getLocalStore();
+}
+
+// ── Read path ──────────────────────────────────────────────────────────────
+
+async function readRows<T>(
+  query: string,
+  params: unknown[],
+  key: string,
+): Promise<T[]> {
+  const entry = cache().get(key);
+  if (entry && entry.gen === cacheGen() && Date.now() - entry.at < MEMORY_TTL_MS) {
+    return entry.rows as T[];
+  }
+
+  const store = await localStore();
+  if (store) {
+    // initial hydration / throttled catch-up; trips the breaker when Neon
+    // is unreachable so the mirror keeps serving without latency
+    await ensureFreshLocal().catch(() => {});
+    try {
+      const rows = store.exec(query, params).rows;
+      cache().set(key, { at: Date.now(), gen: cacheGen(), rows });
+      if (cache().size > MEMORY_MAX_ENTRIES) cache().clear();
+      return rows as T[];
+    } catch (err) {
+      console.error("[jobradar] local read failed, trying remote:", err);
+    }
+  }
+
+  // remote-direct mode (no on-device store) or local read failure
+  try {
+    const rows = await remoteQuery<T>(query, params);
+    getBreaker().recordSuccess();
+    return rows;
+  } catch (err) {
+    const cls = classifyRemoteError(err);
+    if (cls !== "query") getBreaker().recordFailure(err, cls);
+    throw err;
+  }
+}
+
+// ── Write path ─────────────────────────────────────────────────────────────
 
 /**
- * Schema + seed, applied once per process before the first query. The DDL is
- * idempotent, so concurrent instances racing on a fresh database converge.
+ * Statements captured while the remote is down are normalized into
+ * replay-safe ops (natural keys instead of local row ids) — see outbox.ts.
+ * DDL and the unnest-based seed are remote-internal and never queued.
  */
-function ensureSchema(): Promise<void> {
-  if (!globalThis.__jobradarSchemaReady) {
-    globalThis.__jobradarSchemaReady = (async () => {
-      const db = getDb();
-      await db.unsafe(`
-        create table if not exists boards (
-          id                   integer generated always as identity primary key,
-          name                 text not null unique,
-          type                 text not null,
-          url                  text not null,
-          enabled              integer not null default 1,
-          filter_keywords      text not null default '[]',
-          last_fetched_at      text,
-          last_status          text,
-          fetch_interval_hours integer not null default 4
-        );
-
-        create table if not exists listings (
-          id               integer generated always as identity primary key,
-          board_id         integer not null references boards(id) on delete cascade,
-          external_id      text not null,
-          title            text not null,
-          company          text not null default '',
-          location         text not null default '',
-          is_remote        integer not null default 0,
-          visa_sponsorship integer not null default 0,
-          remote_scope     text,
-          tags             text not null default '[]',
-          skills           text not null default '[]',
-          url              text not null default '',
-          posted_at        text,
-          deadline         text,
-          fetched_at       text not null,
-          status           text not null default 'new'
-                           check (status in ('new','favorite','applied','hidden')),
-          user_tags        text not null default '[]',
-          search_text      text not null default '',
-          description      text not null default '',
-          unique (board_id, external_id)
-        );
-        create index if not exists idx_listings_board on listings(board_id);
-        create index if not exists idx_listings_status on listings(status);
-
-        create table if not exists app_settings (
-          key   text primary key,
-          value text not null
-        );
-
-        create table if not exists followed_companies (
-          id         integer generated always as identity primary key,
-          name       text not null,
-          created_at text not null
-        );
-        create unique index if not exists uq_followed_companies_name
-          on followed_companies (lower(name));
-
-        create table if not exists pinned_countries (
-          id         integer generated always as identity primary key,
-          name       text not null,
-          created_at text not null
-        );
-        create unique index if not exists uq_pinned_countries_name
-          on pinned_countries (lower(name));
-      `);
-
-      // Tables live in the API-exposed `public` schema; RLS with no policies
-      // locks the Data API out while the postgres-role app connection
-      // (table owner) keeps full access.
-      await db.unsafe(`
-        alter table boards enable row level security;
-        alter table listings enable row level security;
-        alter table app_settings enable row level security;
-        alter table followed_companies enable row level security;
-        alter table pinned_countries enable row level security;
-      `);
-
-      await db.unsafe(
-        `insert into boards (name, type, url, filter_keywords, enabled)
-         select * from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::int[])
-         on conflict (name) do nothing`,
-        [
-          SEED_BOARDS.map((b) => b.name),
-          SEED_BOARDS.map((b) => b.type),
-          SEED_BOARDS.map((b) => b.url),
-          SEED_BOARDS.map((b) => JSON.stringify(b.keywords)),
-          SEED_BOARDS.map((b) => (b.enabled === false ? 0 : 1)),
-        ] as never[],
-      );
-    })().catch((err) => {
-      // allow a later request to retry a failed init (e.g. transient DNS)
-      globalThis.__jobradarSchemaReady = undefined;
-      throw err;
-    });
-  }
-  return globalThis.__jobradarSchemaReady;
+async function enqueueForSync(
+  store: LocalStore,
+  query: string,
+  params: unknown[],
+): Promise<void> {
+  if (/\bunnest\s*\(/i.test(query)) return;
+  const { toOutboxOp } = await import("@/db/outbox");
+  const op = toOutboxOp(query, params, store);
+  store.enqueue(op.kind === "sql" ? "sql" : "op", op);
 }
 
-// ── Query helpers (all funnel through ensureSchema) ────────────────────────
+async function writeRows(
+  query: string,
+  params: unknown[],
+  wantRows: boolean,
+): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+  const store = await localStore();
+  const translated = translateToSqlite(query, params);
+  let localCount: number | undefined;
+  let localRows: Record<string, unknown>[] | undefined;
+
+  if (store && !translated.skipLocal) {
+    try {
+      const res = store.exec(query, params);
+      localCount = res.changes;
+      localRows = res.rows;
+    } catch (err) {
+      console.error("[jobradar] local write failed:", err);
+    }
+  }
+
+  const settleLocal = (): { rows: Record<string, unknown>[]; count: number } => {
+    invalidateCache();
+    return { rows: localRows ?? [], count: localCount ?? 0 };
+  };
+
+  if (!isRemoteConfigured()) return settleLocal();
+
+  const breaker = getBreaker();
+  if (!breaker.canAttempt()) {
+    if (store) await enqueueForSync(store, query, params);
+    return settleLocal();
+  }
+
+  try {
+    if (wantRows) {
+      const rows = await remoteRunReturning(query, params);
+      breaker.recordSuccess();
+      invalidateCache();
+      void kickDrain();
+      return { rows, count: rows.length };
+    }
+    const count = await remoteRun(query, params);
+    breaker.recordSuccess();
+    invalidateCache();
+    void kickDrain();
+    return { rows: localRows ?? [], count };
+  } catch (err) {
+    const cls = classifyRemoteError(err);
+    if (cls === "query") {
+      // real SQL/constraint bug — surface it exactly like the direct driver
+      throw err;
+    }
+    breaker.recordFailure(err, cls);
+    console.warn(
+      `[jobradar] remote write failed (${cls}) — queued locally:`,
+      err instanceof Error ? err.message : err,
+    );
+    if (store) await enqueueForSync(store, query, params);
+    return settleLocal();
+  }
+}
+
+/** After a successful write, opportunistically flush anything still queued. */
+async function kickDrain(): Promise<void> {
+  const store = await localStore();
+  if (!store || store.queueDepth() === 0) return;
+  if (getBreaker().status().state !== "up") return;
+  await drainOutbox(store).catch(() => {});
+}
+
+// ── Query helpers (the app's entire data surface) ──────────────────────────
 
 /** Run a query and return all rows. */
 export async function q<T = Record<string, unknown>>(
   query: string,
   params: unknown[] = [],
 ): Promise<T[]> {
-  await ensureSchema();
-  return (await getDb().unsafe(query, params as never[])) as T[];
+  if (isReadStatement(query)) {
+    return readRows<T>(query, params, `${query}\u0000${JSON.stringify(params)}`);
+  }
+  const { rows } = await writeRows(query, params, /\breturning\b/i.test(query));
+  return rows as T[];
 }
 
 /** Run a query and return the first row, if any. */
@@ -150,9 +222,9 @@ export async function qOne<T = Record<string, unknown>>(
 
 /** Run a mutating query; returns the number of affected rows. */
 export async function run(query: string, params: unknown[] = []): Promise<number> {
-  await ensureSchema();
-  const result = await getDb().unsafe(query, params as never[]);
-  return result.count;
+  if (isReadStatement(query)) return (await q(query, params)).length;
+  const { count } = await writeRows(query, params, false);
+  return count;
 }
 
 // ── Cross-cutting helpers ──────────────────────────────────────────────────
@@ -337,7 +409,7 @@ interface BoardRow {
 
 export function rowToBoard(r: BoardRow): Board {
   return {
-    id: r.id,
+    id: Number(r.id),
     name: r.name,
     type: r.type as BoardType,
     url: r.url,
@@ -345,7 +417,7 @@ export function rowToBoard(r: BoardRow): Board {
     filterKeywords: safeParse(r.filter_keywords),
     lastFetchedAt: r.last_fetched_at,
     lastStatus: r.last_status,
-    fetchIntervalHours: r.fetch_interval_hours,
+    fetchIntervalHours: Number(r.fetch_interval_hours),
   };
 }
 
@@ -380,8 +452,8 @@ export function rowToListing(r: ListingRow): Listing & {
   description: string;
 } {
   return {
-    id: r.id,
-    boardId: r.board_id,
+    id: Number(r.id),
+    boardId: Number(r.board_id),
     boardName: r.board_name ?? "",
     externalId: r.external_id,
     title: r.title,
@@ -413,330 +485,19 @@ function safeParse(json: string): string[] {
   }
 }
 
-// ── Seed boards on first run ───────────────────────────────────────────────
+// ── Test hooks ─────────────────────────────────────────────────────────────
 
-const SEED_BOARDS: Array<{
-  name: string;
-  type: BoardType;
-  url: string;
-  keywords: string[];
-  enabled?: boolean;
-}> = [
-  {
-    name: "RemoteOK",
-    type: "api",
-    url: "https://remoteok.com/api",
-    keywords: ["java"],
-  },
-  {
-    name: "Remotive",
-    type: "api",
-    url: "https://remotive.com/api/remote-jobs?search=java",
-    keywords: ["java", "spring"],
-  },
-  {
-    name: "Remotive (Software Dev)",
-    type: "api",
-    url: "https://remotive.com/api/remote-jobs?category=software-dev&limit=100",
-    keywords: [],
-  },
-  {
-    name: "Arbeitnow",
-    type: "api",
-    url: "https://www.arbeitnow.com/api/job-board-api",
-    keywords: ["java", "spring"],
-  },
-  {
-    name: "HimalayasApp",
-    type: "api",
-    url: "https://himalayas.app/jobs/api",
-    keywords: ["java", "spring boot"],
-  },
-  {
-    name: "Working Nomads",
-    type: "api",
-    url: "https://www.workingnomads.com/api/exposed_jobs/",
-    keywords: [],
-  },
-  {
-    name: "WeWorkRemotely (Backend)",
-    type: "rss",
-    url: "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
-    keywords: ["java", "spring"],
-  },
+export { setRemoteHarness };
+export type { RemoteHarness };
 
-  // ── International sources ─────────────────────────────────────────────────
-  // Broad tech ingestion by design: each board carries its source's tech/dev
-  // category (no java-only narrowing at fetch time — Java filtering happens in
-  // the UI via global keywords and skill facets). Descriptions come from the
-  // feed directly (Jobicy) or via bounded detail enrichment (Arc, Relocate.me,
-  // Reed) so skills extraction has material at upsert time.
-  {
-    // v2 API, industry=engineering = Jobicy's "Software Engineering" category
-    // (replaces the old "Jobicy (Java tag)" RSS seed that 403'd)
-    name: "Jobicy",
-    type: "api",
-    url: "https://jobicy.com/api/v2/remote-jobs?count=50&industry=engineering",
-    keywords: [],
-  },
-  {
-    // __NEXT_DATA__ listing; detail enrichment adds description + visa flag +
-    // company (vetted jobs). requiredCountries=[] maps to "Anywhere".
-    name: "Arc.dev",
-    type: "scrape",
-    url: "https://arc.dev/remote-jobs",
-    keywords: [],
-  },
-  {
-    // relocation-native EU/UK board; SSR cards + JSON-LD detail enrichment
-    name: "Relocate.me",
-    type: "scrape",
-    url: "https://relocate.me/international-jobs",
-    keywords: [],
-  },
-  {
-    // UK board with a free jobseeker API — needs REED_API_KEY (Basic auth),
-    // so seeded disabled; enable once the key is configured
-    name: "Reed (UK)",
-    type: "api",
-    url: "https://www.reed.co.uk/api/1.0/search?keywords=developer&resultsToTake=100",
-    keywords: [],
-    enabled: false,
-  },
-
-  // ── Japan sources ───────────────────────────────────────────────────────
-  // JapanDev: public web API (list has no description — adapter enriches
-  // from detail endpoints). TokyoDev: SSR listing page, plain HTML scrape;
-  // descriptions filled via headless-browser detail enrichment.
-  {
-    name: "JapanDev",
-    type: "api",
-    url: "https://api.japan-dev.com/api/v1/jobs?page=1",
-    keywords: [],
-  },
-  {
-    name: "TokyoDev",
-    type: "scrape",
-    url: "https://www.tokyodev.com/jobs",
-    keywords: [],
-  },
-
-  {
-    name: "BDJobs IT",
-    type: "api",
-    url: "https://api.bdjobs.com/Jobs/api/JobSearch/GetJobSearch?category=8",
-    keywords: [],
-  },
-  {
-    name: "Cefalo (careers)",
-    type: "scrape",
-    url: "https://career.cefalo.com/",
-    keywords: [],
-  },
-  {
-    name: "Tekarsh (careers)",
-    type: "api",
-    url: "https://tekarsh.com/api/admin/jobs?limit=1000",
-    keywords: [],
-  },
-  {
-    name: "Craftsmen (careers)",
-    type: "api",
-    url: "https://api.smartrecruiters.com/v1/companies/CraftsmenLtd/postings",
-    keywords: [],
-  },
-
-  // ── Bangladesh sources (server-rendered HTML scrapers) ─────────────────
-  {
-    name: "Brain Station 23 (careers)",
-    type: "scrape",
-    url: "https://brainstation-23.easy.jobs/",
-    keywords: [],
-  },
-  // easy.jobs tenants — BD tech companies on the country's dominant hiring
-  // platform. Tenants with zero current openings render an explicit empty
-  // state (fetched as "ok · 0"), and pick up jobs automatically when posted.
-  {
-    name: "Vivasoft (careers)",
-    type: "scrape",
-    url: "https://vivasoft.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "Chaldal (careers)",
-    type: "scrape",
-    url: "https://chaldal.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "Sheba Platform (careers)",
-    type: "scrape",
-    url: "https://sheba.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "Datasoft Systems (careers)",
-    type: "scrape",
-    url: "https://datasoft.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "KONA Software Lab (careers)",
-    type: "scrape",
-    url: "https://konasl.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "Pathao (careers)",
-    type: "scrape",
-    url: "https://pathao.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "LEADS Corporation (careers)",
-    type: "scrape",
-    url: "https://leads.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "Dream 71 (careers)",
-    type: "scrape",
-    url: "https://dream71.easy.jobs/",
-    keywords: [],
-  },
-  {
-    name: "Shohoz (careers)",
-    type: "scrape",
-    url: "https://shohoz.easy.jobs/",
-    keywords: [],
-  },
-  // single-company career feeds (company name filled from the board name)
-  {
-    name: "Enosis Solutions (careers)",
-    type: "rss",
-    url: "https://careers.enosisbd.com/jobs.rss",
-    keywords: [],
-  },
-  {
-    name: "Southtech Group (careers)",
-    type: "rss",
-    url: "https://career.southtechgroup.com/feed/",
-    keywords: [],
-  },
-  {
-    name: "Riseup Labs (careers)",
-    type: "scrape",
-    url: "https://riseuplabs.com/jobs/",
-    keywords: [],
-  },
-  // IoT/telecom tech company hiring via SmartRecruiters (host dispatch above)
-  {
-    name: "Bondstein Technologies (careers)",
-    type: "api",
-    url: "https://api.smartrecruiters.com/v1/companies/BondsteinTechnologiesLtd/postings",
-    keywords: [],
-  },
-  {
-    name: "Daraz (careers)",
-    type: "scrape",
-    url: "https://daraz.easy.jobs/",
-    keywords: [],
-  },
-  // general BD portal — newest ~25 jobs per fetch, filtered to tech titles;
-  // each job names its real hiring company, covering many employers at once
-  {
-    name: "Skill.jobs (tech)",
-    type: "scrape",
-    url: "https://skill.jobs/browse-jobs",
-    keywords: [],
-  },
-  {
-    name: "Nextjobz BD",
-    type: "scrape",
-    url: "https://nextjobz.com.bd/it-jobs",
-    keywords: [],
-  },
-  {
-    name: "Airwork BD",
-    type: "scrape",
-    url: "https://ignition.airwork.ai/api/v2/public/jobs",
-    keywords: [],
-  },
-  {
-    name: "Talvette",
-    type: "scrape",
-    url: "https://api.sheety.co/d6464fb14c638c8070881d5e8789c1fc/talvetteLiveJoblist/liveJobs",
-    keywords: [],
-  },
-
-  // ── Company career pages (Greenhouse boards) ────────────────────────────
-  // Remote-friendly companies with meaningful Java/Kotlin/Scala footprints.
-  // filter_keywords pre-filter each company's full job board down to
-  // backend-relevant roles before anything is stored.
-  {
-    name: "SumUp (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/sumup/jobs?content=true",
-    keywords: ["java", "kotlin", "spring", "backend"],
-  },
-  {
-    name: "HelloFresh (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/hellofresh/jobs?content=true",
-    keywords: ["java", "kotlin", "spring", "backend"],
-  },
-  {
-    name: "Coinbase (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/coinbase/jobs?content=true",
-    keywords: ["java", "kotlin", "backend"],
-  },
-  {
-    name: "Neo4j (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/neo4j/jobs?content=true",
-    keywords: ["java", "kotlin", "backend"],
-  },
-  {
-    name: "Wise (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/wise/jobs?content=true",
-    keywords: ["java", "kotlin", "spring", "backend"],
-  },
-  {
-    name: "Databricks (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/databricks/jobs?content=true",
-    keywords: ["java", "scala", "backend"],
-  },
-  {
-    name: "Okta (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/okta/jobs?content=true",
-    keywords: ["java", "spring", "backend"],
-  },
-  {
-    name: "Twilio (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/twilio/jobs?content=true",
-    keywords: ["java", "backend"],
-  },
-  {
-    name: "N26 (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/n26/jobs?content=true",
-    keywords: ["java", "kotlin", "spring", "backend"],
-  },
-  {
-    name: "GetYourGuide (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/getyourguide/jobs?content=true",
-    keywords: ["kotlin", "java", "backend"],
-  },
-  {
-    name: "Celonis (careers)",
-    type: "greenhouse",
-    url: "https://boards-api.greenhouse.io/v1/boards/celonis/jobs?content=true",
-    keywords: ["java", "backend"],
-  },
-];
+/** Wipe all local-first state (store, breaker, cache) between tests. */
+export async function resetLocalFirstForTests(): Promise<void> {
+  const { closeLocalStoreForTests } = await import("@/db/local-store");
+  const { resetBreakerForTests } = await import("@/db/remote-health");
+  const { resetSyncStateForTests } = await import("@/db/sync");
+  closeLocalStoreForTests();
+  resetBreakerForTests();
+  resetSyncStateForTests();
+  globalThis.__jobradarCache = undefined;
+  globalThis.__jobradarCacheGen = undefined;
+}
