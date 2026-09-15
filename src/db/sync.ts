@@ -281,16 +281,25 @@ export async function selfHealIfEmpty(): Promise<void> {
   const last = store.getMeta("last_self_heal_at");
   if (last !== null && Date.now() - Date.parse(last) < SELF_HEAL_COOLDOWN_MS) return;
 
+  console.log("[jobradar] self-heal: remote down + empty mirror — kicking background refresh");
   const task = (async () => {
     store.setMeta("last_self_heal_at", new Date().toISOString());
-    const { startRefreshRun } = await import("@/lib/refresh");
-    const started = await startRefreshRun(undefined, "scheduled");
-    if (started) await started.done;
-  })()
-    .catch(() => {})
-    .finally(() => {
-      globalThis.__jobradarSelfHealChain = undefined;
-    });
+    try {
+      const { startRefreshRun } = await import("@/lib/refresh");
+      const started = await startRefreshRun(undefined, "scheduled");
+      if (started) {
+        console.log(`[jobradar] self-heal refresh started (${started.run.id}, ${started.run.boards.length} boards)`);
+        await started.done;
+        console.log("[jobradar] self-heal refresh finished");
+      } else {
+        console.warn("[jobradar] self-heal refresh refused — another run is active");
+      }
+    } catch (err) {
+      console.warn("[jobradar] self-heal refresh failed:", err instanceof Error ? err.message : err);
+    }
+  })().finally(() => {
+    globalThis.__jobradarSelfHealChain = undefined;
+  });
   globalThis.__jobradarSelfHealChain = task;
 
   // Serverless kills the invocation when the response is sent unless the
@@ -345,6 +354,7 @@ export async function ensureFreshLocal(): Promise<void> {
       // boards and a manual refresh would have nothing to fetch).
       persistBreakerState(store);
       store.seedBoardsIfEmpty();
+      console.log("[jobradar] initial hydration failed — seeded local mirror, offline mode");
       await selfHealIfEmpty();
     }
     return;
