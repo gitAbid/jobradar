@@ -162,6 +162,25 @@ describe("classifyRemoteError", () => {
     expect(classifyRemoteError(new Error("compute quota exceeded for project"))).toBe("limit");
     expect(classifyRemoteError(new Error('syntax error at or near "form"'))).toBe("query");
   });
+
+  it("treats postgres driver CONNECT_TIMEOUT (uppercase code + errno) as connection", () => {
+    const err = Object.assign(
+      new Error(
+        "write CONNECT_TIMEOUT ep-round-king-aetztw9u-pooler.c-2.us-east-2.aws.neon.tech:5432",
+      ),
+      { code: "CONNECT_TIMEOUT", errno: "CONNECT_TIMEOUT", port: 5432 },
+    );
+    expect(classifyRemoteError(err)).toBe("connection");
+  });
+
+  it("treats uppercase Node connection codes as connection errors", () => {
+    const econnrefused = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
+      code: "ECONNREFUSED",
+    });
+    expect(classifyRemoteError(econnrefused)).toBe("connection");
+    const etimedout = Object.assign(new Error("connection ETIMEDOUT"), { code: "ETIMEDOUT" });
+    expect(classifyRemoteError(etimedout)).toBe("connection");
+  });
 });
 
 // ── fallback behavior ──────────────────────────────────────────────────────

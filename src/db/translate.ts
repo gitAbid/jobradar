@@ -66,22 +66,29 @@ export type RemoteErrorClass = "connection" | "limit" | "query";
 export function classifyRemoteError(err: unknown): RemoteErrorClass {
   if (err instanceof RemoteTimeoutError) return "connection";
 
-  const e = err as { code?: string; message?: string; cause?: unknown };
+  const e = err as { code?: string; errno?: string; message?: string; cause?: unknown };
   const code = String(e?.code ?? "");
+  const lowerCode = code.toLowerCase();
+  // Node.js and driver error codes are uppercase (ECONNREFUSED, ETIMEDOUT);
+  // Postgres codes are lowercase (53000, 08006). Lowercase for regex matching.
   const parts: string[] = [String(e?.message ?? err)];
+  if (e?.errno) parts.push(String(e.errno));
   let cause: unknown = e?.cause;
   for (let depth = 0; depth < 3 && cause; depth += 1) {
-    const c = cause as { message?: string; code?: string; cause?: unknown };
+    const c = cause as { message?: string; code?: string; errno?: string; cause?: unknown };
     if (c.message) parts.push(String(c.message));
     if (c.code) parts.push(String(c.code));
+    if (c.errno) parts.push(String(c.errno));
     cause = c.cause;
   }
   const blob = parts.join(" ").toLowerCase();
 
   if (
-    /^(econn|etimedout|enotfound|eai_again|epipe|eperm|eacces)/.test(code) ||
-    /^(connection|connect|timeout|terminated)/.test(code) ||
-    /connection refused|connection terminated|connection closed|connection ended|connection destroyed|connection error|connection timed out|connect timeout|socket|network|dns|econnrefused|econnreset|etimedout|enotfound|eai_again|epipe|fetch failed|ssl|tls|handshake|self signed|57p|08p|^08|53300|08006|could not connect/.test(
+    /^(econn|etimedout|enotfound|eai_again|epipe|eperm|eacces|connect_timeout|timeout|connection_|ecanceled)/.test(
+      lowerCode,
+    ) ||
+    /connect/i.test(code) ||
+    /connection refused|connection terminated|connection closed|connection ended|connection destroyed|connection error|connection timed out|connect timeout|connect_timeout|socket|network|dns|econnrefused|econnreset|etimedout|enotfound|eai_again|epipe|fetch failed|ssl|tls|handshake|self signed|57p|08p|^08|53300|08006|could not connect/.test(
       blob,
     )
   ) {

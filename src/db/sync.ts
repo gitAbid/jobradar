@@ -21,6 +21,8 @@ import type { OutboxOp } from "@/db/outbox";
  */
 
 const CATCHUP_TTL_MS = 120_000;
+/** How long to trust a persisted "remote down" record across cold starts. */
+const REMOTE_DOWN_CACHE_MS = 5 * 60_000;
 
 function isOpEntry(entry: QueueEntry): entry is QueueEntry & { payload: OutboxOp } {
   return entry.kind === "op" && typeof entry.payload === "object" && entry.payload !== null;
@@ -204,6 +206,7 @@ export function hydrateFromRemote(reason: string): Promise<boolean> {
       const snap = await pullSnapshot();
       store.replaceFromSnapshot(snap);
       getBreaker().recordSuccess();
+      persistBreakerState(store);
       console.log(
         `[jobradar] local mirror synced from remote (${reason}): ${snap.listings.length} listings`,
       );
@@ -214,6 +217,7 @@ export function hydrateFromRemote(reason: string): Promise<boolean> {
         console.error("[jobradar] hydration failed (query error):", err);
       } else {
         getBreaker().recordFailure(err, cls);
+        persistBreakerState(store);
       }
       return false;
     }
@@ -225,6 +229,37 @@ export function hydrateFromRemote(reason: string): Promise<boolean> {
 }
 
 /**
+ * Persist the in-memory breaker state so that Lambda cold starts on Vercel
+ * (which wipe the process but keep `/tmp`) don't repeat the 6 s hydration
+ * timeout against a known-down remote.
+ */
+function persistBreakerState(store: LocalStore): void {
+  const status = getBreaker().status();
+  store.setMeta("breaker_state", JSON.stringify(status));
+}
+
+/**
+ * Restore the breaker from persisted local meta. Survives Vercel cold starts
+ * where the in-memory breaker is fresh but the remote is still down.
+ */
+function restoreBreakerState(store: LocalStore): void {
+  const raw = store.getMeta("breaker_state");
+  if (!raw) return;
+  try {
+    const status = JSON.parse(raw);
+    if (
+      typeof status.state === "string" &&
+      typeof status.failures === "number" &&
+      typeof status.retryInSec === "number"
+    ) {
+      getBreaker().restoreState(status);
+    }
+  } catch {
+    // corrupt meta — ignore, breaker stays fresh
+  }
+}
+
+/**
  * Read-path freshness gate, called before serving local reads:
  *  - breaker open → serve local as-is (offline mode)
  *  - never hydrated → block on initial hydration (nothing cached yet)
@@ -233,6 +268,8 @@ export function hydrateFromRemote(reason: string): Promise<boolean> {
  * window elapses, the next read (or background tick) attempts the pull and
  * either heals the mirror or re-arms the breaker.
  */
+export { persistBreakerState };
+
 export async function ensureFreshLocal(): Promise<void> {
   const store = await getLocalStore();
   if (!store) return;
@@ -241,16 +278,23 @@ export async function ensureFreshLocal(): Promise<void> {
     store.seedBoardsIfEmpty();
     return;
   }
+
+  // Restore breaker from persisted state (survives Vercel cold starts)
+  restoreBreakerState(store);
+
   const last = store.getMeta("last_hydrated_at");
   if (!getBreaker().canAttempt()) {
-    // offline and nothing cached yet — seed the default boards so a
-    // brand-new install can still refresh sources while the remote is down
+    // remote was recently down — serve local cache without a 6 s timeout
     if (last === null) store.seedBoardsIfEmpty();
     return;
   }
 
   if (last === null) {
-    await hydrateFromRemote("initial");
+    const ok = await hydrateFromRemote("initial");
+    if (!ok) {
+      // hydration failed — persist the breaker so cold starts skip the retry
+      persistBreakerState(store);
+    }
     return;
   }
   if (Date.now() - Date.parse(last) > CATCHUP_TTL_MS) {

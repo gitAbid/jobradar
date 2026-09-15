@@ -14,7 +14,7 @@ import {
 } from "@/db/remote";
 import { getBreaker } from "@/db/remote-health";
 import { getLocalStore, type LocalStore } from "@/db/local-store";
-import { drainOutbox, ensureFreshLocal } from "@/db/sync";
+import { drainOutbox, ensureFreshLocal, persistBreakerState } from "@/db/sync";
 
 // ── Local-first query router ───────────────────────────────────────────────
 //
@@ -184,7 +184,10 @@ async function writeRows(
       `[jobradar] remote write failed (${cls}) — queued locally:`,
       err instanceof Error ? err.message : err,
     );
-    if (store) await enqueueForSync(store, query, params);
+    if (store) {
+      persistBreakerState(store);
+      await enqueueForSync(store, query, params);
+    }
     return settleLocal();
   }
 }

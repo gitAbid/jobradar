@@ -72,6 +72,25 @@ export class CircuitBreaker {
       lastSuccessAt: this.lastSuccessAt,
     };
   }
+
+  /** Rehydrate breaker state after a cold start (in-memory state was lost). */
+  restoreState(s: {
+    state: RemoteState;
+    failures: number;
+    retryInSec: number;
+    lastError: string | null;
+    lastErrorAt: string | null;
+    lastErrorClass: "connection" | "limit" | null;
+    lastSuccessAt: string | null;
+  }): void {
+    this.state = s.state;
+    this.failures = s.failures;
+    this.lastError = s.lastError;
+    this.lastErrorAt = s.lastErrorAt;
+    this.lastErrorClass = s.lastErrorClass;
+    this.lastSuccessAt = s.lastSuccessAt;
+    this.openUntil = s.state === "down" ? Date.now() + s.retryInSec * 1000 : 0;
+  }
 }
 
 declare const globalThis: { __jobradarBreaker?: CircuitBreaker };
