@@ -21,8 +21,8 @@ import type { OutboxOp } from "@/db/outbox";
  */
 
 const CATCHUP_TTL_MS = 120_000;
-/** How long to trust a persisted "remote down" record across cold starts. */
-const REMOTE_DOWN_CACHE_MS = 5 * 60_000;
+/** Minimum gap between self-heal refreshes on one instance. */
+const SELF_HEAL_COOLDOWN_MS = 10 * 60_000;
 
 function isOpEntry(entry: QueueEntry): entry is QueueEntry & { payload: OutboxOp } {
   return entry.kind === "op" && typeof entry.payload === "object" && entry.payload !== null;
@@ -170,6 +170,7 @@ export async function drainOutbox(
 declare const globalThis: {
   __jobradarHydrateChain?: Promise<boolean>;
   __jobradarSyncTimer?: ReturnType<typeof setInterval>;
+  __jobradarSelfHealChain?: Promise<unknown>;
 };
 
 async function pullSnapshot(): Promise<Snapshot> {
@@ -260,6 +261,50 @@ function restoreBreakerState(store: LocalStore): void {
 }
 
 /**
+ * While the remote is down, each instance's mirror starts empty (per-instance
+ * /tmp on serverless) and hydration can't fill it. The job-source APIs are
+ * external and unaffected by the database outage, so the instance refreshes
+ * straight into its own SQLite: listings appear on the next load of THIS
+ * instance, and every write lands in the outbox for replay when Neon returns.
+ *
+ * Gated hard: only when the breaker is down, the mirror is seeded but empty,
+ * and the cooldown has elapsed — single-flighted per process.
+ */
+export async function selfHealIfEmpty(): Promise<void> {
+  const store = await getLocalStore();
+  if (!store || !isRemoteConfigured()) return;
+  if (getBreaker().canAttempt()) return; // remote up → hydration owns recovery
+  if (store.counts().listings > 0) return; // mirror already has data
+  if (globalThis.__jobradarSelfHealChain) return; // already healing
+  if (process.env.NODE_ENV === "test") return; // never fetch in tests
+
+  const last = store.getMeta("last_self_heal_at");
+  if (last !== null && Date.now() - Date.parse(last) < SELF_HEAL_COOLDOWN_MS) return;
+
+  const task = (async () => {
+    store.setMeta("last_self_heal_at", new Date().toISOString());
+    const { startRefreshRun } = await import("@/lib/refresh");
+    const started = await startRefreshRun(undefined, "scheduled");
+    if (started) await started.done;
+  })()
+    .catch(() => {})
+    .finally(() => {
+      globalThis.__jobradarSelfHealChain = undefined;
+    });
+  globalThis.__jobradarSelfHealChain = task;
+
+  // Serverless kills the invocation when the response is sent unless the
+  // work is registered with after(); outside a request context (dev server,
+  // instrumentation) the floating promise still runs in-process.
+  try {
+    const { after } = await import("next/server");
+    after(() => task);
+  } catch {
+    // no request scope — floating promise is fine in a long-lived process
+  }
+}
+
+/**
  * Read-path freshness gate, called before serving local reads:
  *  - breaker open → serve local as-is (offline mode)
  *  - never hydrated → block on initial hydration (nothing cached yet)
@@ -286,6 +331,7 @@ export async function ensureFreshLocal(): Promise<void> {
   if (!getBreaker().canAttempt()) {
     // remote was recently down — serve local cache without a 6 s timeout
     if (last === null) store.seedBoardsIfEmpty();
+    await selfHealIfEmpty();
     return;
   }
 
@@ -299,6 +345,7 @@ export async function ensureFreshLocal(): Promise<void> {
       // boards and a manual refresh would have nothing to fetch).
       persistBreakerState(store);
       store.seedBoardsIfEmpty();
+      await selfHealIfEmpty();
     }
     return;
   }

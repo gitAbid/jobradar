@@ -11,6 +11,10 @@ import { connection } from "next/server";
 import { ArrowUpRight, BriefcaseBusiness, Sparkles } from "lucide-react";
 import Link from "next/link";
 
+// A page load on a cold instance may kick a self-heal refresh (local-first
+// offline mode); give the post-response work the full serverless budget.
+export const maxDuration = 60;
+
 interface SearchParams {
   q?: string;
   status?: string;

@@ -10,6 +10,9 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { CompanyBadge } from "@/components/ListingCard";
 
+// May kick a self-heal refresh on a cold instance while the remote is down.
+export const maxDuration = 60;
+
 const COLUMNS: Array<{ status: ListingStatus; title: string; icon: React.ReactNode }> = [
   { status: "favorite", title: "Favorite", icon: <Heart className="h-4 w-4" /> },
   { status: "applied", title: "Applied", icon: <Send className="h-4 w-4" /> },

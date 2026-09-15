@@ -6,6 +6,9 @@ import { ListingCard } from "@/components/ListingCard";
 import { ArrowUpRight, Building2, Heart, Star, X } from "lucide-react";
 import type { FilterableListing } from "@/lib/types";
 
+// May kick a self-heal refresh on a cold instance while the remote is down.
+export const maxDuration = 60;
+
 const FOLLOWING_LIMIT = 200;
 
 interface SearchParams {
