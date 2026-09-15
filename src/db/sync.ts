@@ -292,8 +292,13 @@ export async function ensureFreshLocal(): Promise<void> {
   if (last === null) {
     const ok = await hydrateFromRemote("initial");
     if (!ok) {
-      // hydration failed — persist the breaker so cold starts skip the retry
+      // hydration failed (remote down) — persist the breaker so subsequent
+      // cold starts skip the retry, and seed the default boards NOW so this
+      // first read still has sources to serve/refresh instead of an empty
+      // mirror (a cold instance's very first read would otherwise return 0
+      // boards and a manual refresh would have nothing to fetch).
       persistBreakerState(store);
+      store.seedBoardsIfEmpty();
     }
     return;
   }
