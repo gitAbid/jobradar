@@ -49,3 +49,6 @@ data/
 # local agent/tooling caches
 .video_agent/
 .zcode/
+
+# visual QA screenshots
+/docs/qa/
