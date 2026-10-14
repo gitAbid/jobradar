@@ -8,6 +8,7 @@ import { listPinnedCountries } from "@/db";
 import { isSoundEnabled } from "@/lib/settings";
 import { togglePinCountryAction } from "@/app/actions";
 import { AppHeader } from "@/components/AppHeader";
+import { UserMenu } from "@/components/UserMenu";
 import { RefreshStatusBar } from "@/components/RefreshStatusBar";
 import "./globals.css";
 
@@ -77,6 +78,11 @@ export default function RootLayout({
         <a className="skip-link" href="#main-content">Skip to content</a>
         <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/90 backdrop-blur-xl">
           <AppHeader />
+          <div className="mx-auto flex max-w-7xl justify-end px-4 pb-1 sm:px-6">
+            <Suspense fallback={null}>
+              <UserMenu />
+            </Suspense>
+          </div>
           <Suspense fallback={null}>
             <PinnedCountriesNav />
           </Suspense>

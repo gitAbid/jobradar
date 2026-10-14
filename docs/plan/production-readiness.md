@@ -339,7 +339,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test.
 
-## P3.3 Auth wiring + authz helpers  [ ]   model: sonnet   depends: P3.2
+## P3.3 Auth wiring + authz helpers  [x]   model: sonnet   depends: P3.2
 **Files:** `src/auth.ts`, `src/app/api/auth/[...nextauth]/route.ts`, `src/proxy.ts`, `src/lib/authz.ts`, `src/app/signin/page.tsx`, `src/components/UserMenu.tsx`, `src/app/layout.tsx`, `package.json`.
 
 **Research:** `docs/research/authjs.md`.
