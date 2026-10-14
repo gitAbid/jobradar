@@ -53,7 +53,7 @@ function makeApiRemote() {
         return [{ id: row.id }];
       }
       if (s.includes("from api_keys")) {
-        if (s.includes("where key_hash")) {
+        if (s.includes("key_hash = $1")) {
           return rows.filter((r) => r.key_hash === params[0]) as unknown as Record<
             string,
             unknown
@@ -198,5 +198,32 @@ describe("NeonKeyStore (remote down)", () => {
     await expect(store.list(OWNER)).rejects.toThrow(/ECONNREFUSED/);
     await expect(store.findByHash(hashKey("x"))).rejects.toThrow(/ECONNREFUSED/);
     await expect(store.revoke(1, OWNER, new Date().toISOString())).rejects.toThrow(/ECONNREFUSED/);
+  });
+});
+
+describe("NeonKeyStore (real schema)", () => {
+  it("rejects keys of disabled users", async () => {
+    const { PGlite } = await import("@electric-sql/pglite");
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const db = new PGlite();
+    const dir = join(process.cwd(), "db/migrations");
+    for (const f of readdirSync(dir).sort()) if (f.endsWith(".sql")) await db.exec(readFileSync(join(dir, f), "utf8"));
+    await db.query("insert into users (id, email) values ($1, 'o@x.io')", [OWNER]);
+    await db.query(
+      "insert into api_keys (name, prefix, key_hash, user_id, created_at) values ('k', 'jrk_d', $1, $2, now())",
+      [hashKey("jrk_disabled"), OWNER],
+    );
+    setRemoteHarness({
+      query: async (sql, params) => (await db.query(sql, params)).rows as Record<string, unknown>[],
+      run: async (sql, params) => (await db.query(sql, params)).affectedRows ?? 0,
+    });
+    try {
+      expect(await apiKeys().findByHash(hashKey("jrk_disabled"))).not.toBeNull();
+      await db.query("update users set disabled_at = now() where id = $1", [OWNER]);
+      expect(await apiKeys().findByHash(hashKey("jrk_disabled"))).toBeNull();
+    } finally {
+      setRemoteHarness(null);
+    }
   });
 });

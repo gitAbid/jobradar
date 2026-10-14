@@ -198,8 +198,9 @@ export async function expireOldListings(): Promise<void> {
       where l.fetched_at < $1::timestamptz
         and not exists (select 1 from user_listing_state s where s.listing_id = l.id
                           and (s.status in ('favorite','applied') or s.user_tags <> '[]'::jsonb))
-        and not exists (select 1 from legacy_listing_state g where g.listing_id = l.id
-                          and (g.status in ('favorite','applied') or g.user_tags <> '[]'::jsonb))`,
+        and (exists (select 1 from app_settings where key = 'legacy_claimed')
+             or not exists (select 1 from legacy_listing_state g where g.listing_id = l.id
+                              and (g.status in ('favorite','applied') or g.user_tags <> '[]'::jsonb)))`,
     [cutoff],
   );
 }

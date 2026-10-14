@@ -38,6 +38,15 @@ describe("robots parser", () => {
     const t = "User-agent: foo\nUser-agent: jobradarbot\nDisallow: /";
     expect(allowed(t, "/a")).toBe(false);
   });
+  it("non-rule records between agents don't split a group", () => {
+    const t = "User-agent: foo\nCrawl-delay: 5\nUser-agent: jobradarbot\nDisallow: /x";
+    expect(allowed(t, "/x")).toBe(false);
+  });
+  it("an agent line after rules starts a new group", () => {
+    const t = "User-agent: jobradarbot\nDisallow: /x\nUser-agent: other\nDisallow: /y";
+    expect(allowed(t, "/x")).toBe(false);
+    expect(allowed(t, "/y")).toBe(true);
+  });
 });
 
 describe("isAllowedByRobots", () => {
@@ -54,6 +63,10 @@ describe("isAllowedByRobots", () => {
   it("404 allows", async () => {
     safeFetch.mockResolvedValue({ ok: false, status: 404, text: async () => "" });
     expect(await isAllowedByRobots("https://b.test/x")).toBe(true);
+  });
+  it("429 disallows", async () => {
+    safeFetch.mockResolvedValue({ ok: false, status: 429, text: async () => "" });
+    expect(await isAllowedByRobots("https://f.test/x")).toBe(false);
   });
   it("500 and network error disallow", async () => {
     safeFetch.mockResolvedValue({ ok: false, status: 500, text: async () => "" });

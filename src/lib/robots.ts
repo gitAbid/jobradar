@@ -2,7 +2,7 @@ import { BOT_UA, safeFetch } from "@/lib/safe-fetch";
 
 /**
  * robots.txt (RFC 9309) support. One fetch per origin, cached in-module.
- * 4xx -> no restrictions; 5xx / network error -> treated as disallowed, but
+ * 4xx (except 429) -> no restrictions; 429 / 5xx / network error -> treated as disallowed, but
  * only cached briefly so the origin is retried soon.
  */
 
@@ -33,7 +33,9 @@ export interface RobotsRules {
 export function parseRobots(text: string): RobotsRules {
   const groups: Array<{ agents: string[]; rules: RobotsRule[] }> = [];
   let cur: { agents: string[]; rules: RobotsRule[] } | null = null;
-  let lastWasAgent = false;
+  // RFC 9309: a group ends only when a user-agent line follows a rule line;
+  // other records (Sitemap, Crawl-delay, ...) don't split a group.
+  let sawRule = false;
   for (const raw of text.replace(/^﻿/, "").split(/\r?\n/)) {
     const line = raw.replace(/#.*/, "").trim();
     const i = line.indexOf(":");
@@ -41,19 +43,17 @@ export function parseRobots(text: string): RobotsRules {
     const key = line.slice(0, i).trim().toLowerCase();
     const value = line.slice(i + 1).trim();
     if (key === "user-agent") {
-      if (!cur || !lastWasAgent) {
+      if (!cur || sawRule) {
         cur = { agents: [], rules: [] };
         groups.push(cur);
+        sawRule = false;
       }
       cur.agents.push(value.toLowerCase());
-      lastWasAgent = true;
     } else if (key === "allow" || key === "disallow") {
-      lastWasAgent = false;
       if (!cur) continue;
+      sawRule = true;
       // empty Disallow = allow all (no rule); empty Allow is a no-op too
       if (value) cur.rules.push({ allow: key === "allow", pattern: value });
-    } else {
-      lastWasAgent = false;
     }
   }
   const specific = groups.filter((g) => g.agents.some((a) => a === AGENT));
@@ -106,7 +106,7 @@ async function loadRules(origin: string): Promise<{ rules: RobotsRules; ttl: num
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (res.ok) return { rules: parseRobots(await res.text()), ttl: TTL_MS };
-    if (res.status >= 400 && res.status < 500) return { rules: { rules: [] }, ttl: TTL_MS };
+    if (res.status >= 400 && res.status < 500 && res.status !== 429) return { rules: { rules: [] }, ttl: TTL_MS };
   } catch {
     // fall through: unreachable
   }

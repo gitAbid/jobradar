@@ -73,26 +73,47 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!verified) return false;
 
       const sql = getDb();
-      const email = user.email.toLowerCase();
+      // An already-linked provider account always maps to its user, even if the
+      // provider now reports a different email; gates are checked on that user.
+      const [linked] = await sql<(UserRow & { email: string })[]>`
+        select u.id, u.role, u.disabled_at, u.email
+          from accounts a join users u on u.id = a.user_id
+         where a.provider = ${account.provider}
+           and a.provider_account_id = ${account.providerAccountId}`;
+      const email = linked?.email ?? user.email.toLowerCase();
       const admin = isAdminEmail(email);
-      const [row] = await sql<UserRow[]>`
-        insert into users (email, name, image, role)
-        values (${email}, ${user.name ?? null}, ${user.image ?? null}, ${admin ? "admin" : "user"})
-        on conflict (email) do update set
-          name = coalesce(excluded.name, users.name),
-          image = coalesce(excluded.image, users.image),
-          role = case when ${admin}::boolean then 'admin' else users.role end,
-          updated_at = now()
-        returning id, role, disabled_at`;
-      if (!row || row.disabled_at) return false;
-      await sql`
-        insert into accounts (provider, provider_account_id, user_id)
-        values (${account.provider}, ${account.providerAccountId}, ${row.id})
-        on conflict (provider, provider_account_id) do nothing`;
+      let userId: string;
+      if (linked) {
+        if (linked.disabled_at) return false;
+        await sql`
+          update users set
+            name = coalesce(${user.name ?? null}, name),
+            image = coalesce(${user.image ?? null}, image),
+            role = case when ${admin}::boolean then 'admin' else role end,
+            updated_at = now()
+           where id = ${linked.id}`;
+        userId = linked.id;
+      } else {
+        const [row] = await sql<UserRow[]>`
+          insert into users (email, name, image, role)
+          values (${email}, ${user.name ?? null}, ${user.image ?? null}, ${admin ? "admin" : "user"})
+          on conflict (email) do update set
+            name = coalesce(excluded.name, users.name),
+            image = coalesce(excluded.image, users.image),
+            role = case when ${admin}::boolean then 'admin' else users.role end,
+            updated_at = now()
+          returning id, role, disabled_at`;
+        if (!row || row.disabled_at) return false;
+        await sql`
+          insert into accounts (provider, provider_account_id, user_id)
+          values (${account.provider}, ${account.providerAccountId}, ${row.id})
+          on conflict (provider, provider_account_id) do nothing`;
+        userId = row.id;
+      }
 
       if (admin) {
         try {
-          await claimLegacyState(row.id);
+          await claimLegacyState(userId);
         } catch (e) {
           console.error("claimLegacyState failed:", e instanceof Error ? e.message : "unknown error");
         }

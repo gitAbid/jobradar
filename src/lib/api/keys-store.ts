@@ -70,9 +70,13 @@ class NeonKeyStore implements KeyStore {
   }
 
   async findByHash(keyHash: string): Promise<ApiKeyRecord | null> {
-    const rows = await remoteQuery<ApiKeyRow>("select * from api_keys where key_hash = $1", [
-      keyHash,
-    ]);
+    // Keys of disabled users stop working immediately (sessions lapse within minutes).
+    const rows = await remoteQuery<ApiKeyRow>(
+      `select k.* from api_keys k
+         left join users u on u.id = k.user_id
+        where k.key_hash = $1 and u.disabled_at is null`,
+      [keyHash],
+    );
     return rows[0] ? rowToRecord(rows[0]) : null;
   }
 

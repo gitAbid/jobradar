@@ -96,4 +96,11 @@ describe("expireOldListings", () => {
     expect(ids).not.toContain(6);
     expect(ids).not.toContain(5); // hidden-only listings expire
   });
+
+  it("ignores legacy state once it has been claimed", async () => {
+    await db.exec("insert into app_settings (key, value) values ('legacy_claimed', 'x')");
+    await expireOldListings();
+    const ids = (await db.query<{ id: number }>("select id from listings order by id")).rows.map((r) => r.id);
+    expect(ids).toEqual([1, 2, 3]);
+  });
 });
