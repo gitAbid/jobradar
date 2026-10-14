@@ -9,12 +9,8 @@ declare const globalThis: {
   __jobradarRemoteHarness?: RemoteHarness;
 };
 
-/** Remote operation time budget — fallback must be fast, not hang. */
-export const REMOTE_TIMEOUT_MS = 6_000;
-
-export function isRemoteConfigured(): boolean {
-  return Boolean(process.env.DATABASE_URL);
-}
+/** Per-statement time budget; a slow Neon call rejects instead of hanging the request. */
+const REMOTE_TIMEOUT_MS = 6_000;
 
 export function getDb(): postgres.Sql {
   if (!globalThis.__jobradarSql) {
@@ -37,9 +33,9 @@ export function getDb(): postgres.Sql {
 
 // ── Test harness ───────────────────────────────────────────────────────────
 //
-// The local-first layer must be testable without a live Postgres: tests
-// install a fake remote executor and every remote call below routes through
-// it. Production never sets it.
+// Code that talks to Postgres must be testable without a live database: tests
+// install a fake executor and every remote call below routes through it.
+// Production never sets it.
 
 export interface RemoteHarness {
   query: (sql: string, params: unknown[]) => Promise<Record<string, unknown>[]>;
@@ -66,7 +62,7 @@ async function counted<R>(p: Promise<R>, measure = true): Promise<R> {
   }
 }
 
-/** Remote SELECT; resolves to rows. Times out as a connection failure. */
+/** Remote SELECT; resolves to rows. Rejects if it exceeds REMOTE_TIMEOUT_MS. */
 export async function remoteQuery<T = Record<string, unknown>>(
   sql: string,
   params: unknown[] = [],
@@ -118,7 +114,7 @@ export async function remoteRunReturning<T = Record<string, unknown>>(
   return rows;
 }
 
-/** Cheap liveness probe used by the circuit breaker. */
+/** Cheap liveness probe used by the health endpoint. */
 export async function probeRemote(): Promise<boolean> {
   await remoteQuery("select 1 as ok");
   return true;

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { cacheLife, cacheTag } from "next/cache";
 import { remoteQuery } from "@/db/remote";
 import { COUNTRY_FACETS, topValues } from "@/lib/facets";
@@ -359,8 +360,8 @@ export function rowToFeedListing(r: Record<string, unknown>): FilterableListing 
     title: String(r.title),
     company: String(r.company ?? ""),
     location: String(r.location ?? ""),
-    isRemote: r.is_remote === true || r.is_remote === 1,
-    visaSponsorship: r.visa_sponsorship === true || r.visa_sponsorship === 1,
+    isRemote: r.is_remote === true,
+    visaSponsorship: r.visa_sponsorship === true,
     remoteScope: (r.remote_scope as "anywhere" | "restricted" | null) ?? null,
     tags: parseStringArray(r.tags),
     skills: parseStringArray(r.skills),
@@ -471,21 +472,43 @@ export async function fetchListingById(
 
 // ── Shared cache (Next 16 Cache Components) ────────────────────────────────
 
-const PARAM_KEYS = [
-  "status", "remote", "visa", "showAll", "q", "skill", "country", "company", "source", "page",
-] as const;
+const SCALAR_KEYS = ["status", "remote", "visa", "showAll", "q", "page"] as const;
+const MAX_VALUE_LEN = 200;
+const MAX_FACET_VALUES = 50;
+
+// Coerce, never throw: scalars take the first value of a repeated param,
+// facets are capped string arrays; anything else is dropped.
+const scalarParam = z.preprocess(
+  (v) => (Array.isArray(v) ? v[0] : v),
+  z.string().transform((s) => s.slice(0, MAX_VALUE_LEN)),
+);
+const facetParam = z.preprocess(
+  (v) => (typeof v === "string" ? [v] : v),
+  z
+    .array(z.unknown())
+    .transform((a) =>
+      a
+        .filter((x): x is string => typeof x === "string" && x !== "")
+        .slice(0, MAX_FACET_VALUES)
+        .map((x) => x.slice(0, MAX_VALUE_LEN)),
+    ),
+);
 
 /**
  * Whitelist + canonicalise filter params so the cache key is built from
- * serializable, known keys only (searchParams may carry junk or a
- * null-prototype object).
+ * serializable, known keys only (searchParams may carry junk, repeated
+ * params or a null-prototype object). Never throws.
  */
 export function normaliseParams(sp: RawParams): RawParams {
   const out: Record<string, string | string[]> = {};
-  for (const k of PARAM_KEYS) {
-    const v = sp[k];
-    if (v === undefined || v === "") continue;
-    out[k] = Array.isArray(v) ? [...v] : v;
+  const src = sp as Record<string, unknown>;
+  for (const k of SCALAR_KEYS) {
+    const r = scalarParam.safeParse(src[k]);
+    if (r.success && r.data !== "") out[k] = r.data;
+  }
+  for (const k of FACET_PARAMS) {
+    const r = facetParam.safeParse(src[k]);
+    if (r.success && r.data.length > 0) out[k] = r.data;
   }
   return out as RawParams;
 }

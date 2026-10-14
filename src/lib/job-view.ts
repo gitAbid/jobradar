@@ -219,7 +219,7 @@ export async function loadJobView(
     ...(opts.facetLimit !== undefined ? { facetLimit: opts.facetLimit } : {}),
   });
   if (process.env.NODE_ENV !== "production") {
-    console.log(`[jobradar] feed page: ${JSON.stringify(view).length} bytes`);
+    console.log(`[jobradar] feed page: ${view.entries.length} items, ${view.totalVisible} total`);
   }
   return view;
 }

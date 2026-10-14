@@ -284,6 +284,24 @@ describe("normaliseParams (cache key)", () => {
     });
     expect(normaliseParams(sp)).toEqual({ q: "java", skill: ["a", "b"], page: "2" });
   });
+  it("takes the first value of repeated scalar params and builds a valid query", () => {
+    const n = normaliseParams({ q: ["a", "b"], status: ["new", "x"] } as never);
+    expect(n).toEqual({ q: "a", status: "new" });
+    expect(() => buildFacetQuery(n, [], new Map(), { pageSize: 20 })).not.toThrow();
+  });
+  it("caps lengths and counts, drops unknown keys", () => {
+    const n = normaliseParams({
+      q: "x".repeat(500),
+      skill: Array.from({ length: 80 }, (_, i) => "s".repeat(300) + i),
+      company: "solo",
+      evil: "1",
+    } as never);
+    expect((n.q as string).length).toBe(200);
+    expect(n.skill).toHaveLength(50);
+    expect((n.skill as string[])[0].length).toBe(200);
+    expect(n.company).toEqual(["solo"]);
+    expect("evil" in n).toBe(false);
+  });
 });
 
 import { backfillCountries } from "@/lib/country-backfill";

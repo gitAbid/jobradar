@@ -182,7 +182,7 @@ export async function insertListings(boardId: number, rows: NewListingRow[]): Pr
         r.url,
         tsOrNull(r.postedAt),
         tsOrNull(r.deadline),
-        r.fetchedAt,
+        tsOrNull(r.fetchedAt) ?? new Date().toISOString(),
         r.searchText,
         r.description,
       );
@@ -289,7 +289,7 @@ interface BoardRow {
   name: string;
   type: string;
   url: string;
-  enabled: boolean | number;
+  enabled: boolean;
   filter_keywords: unknown;
   last_fetched_at: Date | string | null;
   last_status: string | null;
@@ -302,7 +302,7 @@ export function rowToBoard(r: BoardRow): Board {
     name: r.name,
     type: r.type as BoardType,
     url: r.url,
-    enabled: isTrue(r.enabled),
+    enabled: r.enabled,
     filterKeywords: safeParse(r.filter_keywords),
     lastFetchedAt: toIsoOrNull(r.last_fetched_at),
     lastStatus: r.last_status,
@@ -318,8 +318,8 @@ interface ListingRow {
   title: string;
   company: string;
   location: string;
-  is_remote: boolean | number;
-  visa_sponsorship: boolean | number;
+  is_remote: boolean;
+  visa_sponsorship: boolean;
   remote_scope?: string | null;
   tags: unknown;
   skills?: unknown;
@@ -348,8 +348,8 @@ export function rowToListing(r: ListingRow): Listing & {
     title: r.title,
     company: r.company,
     location: r.location,
-    isRemote: isTrue(r.is_remote),
-    visaSponsorship: isTrue(r.visa_sponsorship),
+    isRemote: r.is_remote,
+    visaSponsorship: r.visa_sponsorship,
     remoteScope: (r.remote_scope as "anywhere" | "restricted" | null) ?? null,
     tags: safeParse(r.tags),
     skills: safeParse(r.skills),
@@ -363,10 +363,6 @@ export function rowToListing(r: ListingRow): Listing & {
     searchText: r.search_text ?? "",
     description: r.description ?? "",
   };
-}
-
-function isTrue(v: unknown): boolean {
-  return v === true || v === 1;
 }
 
 /** timestamptz arrives as Date (postgres.js / PGlite); API output stays an ISO string. */

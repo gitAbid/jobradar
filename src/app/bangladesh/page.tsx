@@ -9,9 +9,6 @@ import { ArrowUpRight, BriefcaseBusiness, MapPin } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 
-// May kick a self-heal refresh on a cold instance while the remote is down.
-export const maxDuration = 60;
-
 interface SearchParams {
   q?: string;
   status?: string;
