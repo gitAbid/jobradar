@@ -35,7 +35,7 @@ export function ListingCard({
                 rel="noreferrer"
                 className="inline-flex items-start gap-1 hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
-                <Highlight text={listing.title} keywords={matched} />
+                <span><Highlight text={listing.title} keywords={matched} /></span>
                 <ExternalLink aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint transition-colors group-hover:text-primary" />
                 <span className="sr-only">(opens in a new tab)</span>
               </a>

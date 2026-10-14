@@ -60,6 +60,8 @@ export function AppHeader({
   signedOut?: boolean;
 }) {
   const links = isAdmin ? [...NAV_LINKS, ADMIN_LINK] : NAV_LINKS;
+  // the sign-in page is its own call to action
+  const onSignIn = usePathname() === "/signin";
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6">
       <div className="flex min-h-[3.5rem] items-center gap-4 lg:min-h-[4.25rem]">
@@ -88,7 +90,7 @@ export function AppHeader({
         </nav>
         )}
 
-        <div className="ml-auto min-w-0 lg:ml-0">{userMenu}</div>
+        <div className={`ml-auto min-w-0 ${signedOut ? "" : "lg:ml-0"}`}>{onSignIn ? null : userMenu}</div>
       </div>
 
       {!signedOut && (

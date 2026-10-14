@@ -7,7 +7,7 @@ test("core user journey", async ({ page, request }) => {
 
   await test.step("sign in with test login", async () => {
     await page.goto("/signin");
-    await page.getByLabel("Test login (dev only)").fill(email);
+    await page.getByLabel("Test login · dev only").fill(email);
     await page.getByRole("button", { name: "Sign in as test user" }).click();
     await page.waitForURL(/\/onboarding/);
   });

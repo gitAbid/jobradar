@@ -15,7 +15,10 @@ export async function UserMenu() {
   const user = await getSessionUser();
   if (!user) {
     return (
-      <Link href="/signin" className="text-sm font-medium text-primary hover:underline">
+      <Link
+        href="/signin"
+        className="inline-flex min-h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+      >
         Sign in
       </Link>
     );
