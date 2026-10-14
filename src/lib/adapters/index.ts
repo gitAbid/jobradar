@@ -626,7 +626,7 @@ async function fetchJapanDev(board: Pick<Board, "id" | "name" | "url">): Promise
       board.id,
       all
         .filter((l) => l.description.length >= 80)
-        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0 })),
+        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship })),
     );
     console.log(`[jobradar] japandev: enriched ${enriched} listings via detail API`);
   }
@@ -759,7 +759,7 @@ async function fetchReed(board: Pick<Board, "id" | "name" | "url">): Promise<Nor
       board.id,
       all
         .filter((l) => l.description)
-        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0 })),
+        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship })),
     );
     console.log(`[jobradar] reed: enriched ${enriched} descriptions via detail API`);
   }
@@ -802,7 +802,7 @@ async function fetchArc(board: Pick<Board, "id" | "name" | "url">): Promise<Norm
         .filter((l) => l.description)
         .map((l) =>
           toPatch(l, {
-            visaSponsorship: l.visaSponsorship ? 1 : 0,
+            visaSponsorship: l.visaSponsorship,
             company: l.company,
           }),
         ),
@@ -856,7 +856,7 @@ async function fetchRelocateMe(board: Pick<Board, "id" | "name" | "url">): Promi
       listings
         .filter((l) => l.description)
         .map((l) =>
-          toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0, postedAt: l.postedAt }),
+          toPatch(l, { visaSponsorship: l.visaSponsorship, postedAt: l.postedAt }),
         ),
     );
     console.log(`[jobradar] relocate.me: enriched ${enriched} descriptions via detail pages`);

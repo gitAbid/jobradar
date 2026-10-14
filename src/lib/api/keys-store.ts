@@ -11,10 +11,16 @@ interface ApiKeyRow {
   name: string;
   key_hash?: string;
   prefix: string;
-  created_at: string;
-  last_used_at: string | null;
+  created_at: Date | string;
+  last_used_at: Date | string | null;
   request_count: number;
-  revoked_at: string | null;
+  revoked_at: Date | string | null;
+}
+
+/** timestamptz arrives as Date; the KeyStore contract uses ISO strings. */
+function iso(v: Date | string | null): string | null {
+  if (v == null) return null;
+  return v instanceof Date ? v.toISOString() : v;
 }
 
 function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
@@ -22,10 +28,10 @@ function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
     id: Number(r.id),
     name: r.name,
     prefix: r.prefix,
-    createdAt: r.created_at,
-    lastUsedAt: r.last_used_at,
+    createdAt: iso(r.created_at) ?? "",
+    lastUsedAt: iso(r.last_used_at),
     requestCount: Number(r.request_count),
-    revokedAt: r.revoked_at,
+    revokedAt: iso(r.revoked_at),
   };
 }
 
@@ -37,7 +43,7 @@ class NeonKeyStore implements KeyStore {
     createdAt: string;
   }): Promise<number> {
     const rows = await remoteRunReturning<{ id: number }>(
-      "insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4) returning id",
+      "insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4::timestamptz) returning id",
       [key.name, key.keyHash, key.prefix, key.createdAt],
     );
     if (!rows[0]) throw new Error("api_keys insert returned no id");
@@ -51,7 +57,7 @@ class NeonKeyStore implements KeyStore {
 
   async revoke(id: number, revokedAt: string): Promise<boolean> {
     const count = await remoteRun(
-      "update api_keys set revoked_at = $1 where id = $2 and revoked_at is null",
+      "update api_keys set revoked_at = $1::timestamptz where id = $2 and revoked_at is null",
       [revokedAt, id],
     );
     return count > 0;
@@ -66,7 +72,7 @@ class NeonKeyStore implements KeyStore {
 
   async recordUsage(id: number, usedAt: string): Promise<void> {
     await remoteRun(
-      "update api_keys set last_used_at = $1, request_count = request_count + 1 where id = $2",
+      "update api_keys set last_used_at = $1::timestamptz, request_count = request_count + 1 where id = $2",
       [usedAt, id],
     );
   }

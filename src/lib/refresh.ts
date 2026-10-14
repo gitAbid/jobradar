@@ -36,7 +36,7 @@ export interface StartedRefreshRun {
 async function loadEnabledBoards(boardId?: number): Promise<Board[]> {
   const rows = await q<Record<string, unknown>>(
     `select b.* from boards b
-     where ($1::int is null or b.id = $1) and b.enabled = 1`,
+     where ($1::int is null or b.id = $1) and b.enabled`,
     [boardId ?? null],
   );
   return rows.map((r) => rowToBoard(r as never));
@@ -127,7 +127,7 @@ export async function refreshBoard(
   try {
     const listings = sanitizeTags(await fetchBoardListings(board));
     const inserted = await upsertListings(board.id, listings);
-    await run("update boards set last_fetched_at = $1, last_status = $2 where id = $3", [
+    await run("update boards set last_fetched_at = $1::timestamptz, last_status = $2 where id = $3", [
       new Date().toISOString(),
       `ok · ${listings.length} fetched`,
       board.id,
@@ -136,7 +136,7 @@ export async function refreshBoard(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // board may have been deleted mid-refresh — keep the failure reportable
-    await run("update boards set last_fetched_at = $1, last_status = $2 where id = $3", [
+    await run("update boards set last_fetched_at = $1::timestamptz, last_status = $2 where id = $3", [
       new Date().toISOString(),
       `error · ${msg.slice(0, 180)}`,
       board.id,
@@ -190,5 +190,5 @@ async function upsertListings(boardId: number, listings: NormalizedListing[]): P
 /** Remove non-saved listings not refetched in 45 days (applied/favorite are kept). */
 async function expireOldListings(): Promise<void> {
   const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
-  await run("delete from listings where status = 'new' and fetched_at < $1", [cutoff]);
+  await run("delete from listings where status = 'new' and fetched_at < $1::timestamptz", [cutoff]);
 }

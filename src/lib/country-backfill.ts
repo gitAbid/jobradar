@@ -22,7 +22,7 @@ export async function backfillCountries(exec: BackfillExec, batch = 2000): Promi
     const countries = rows.map((r) =>
       countryFacetValue({
         location: String(r.location ?? ""),
-        isRemote: Number(r.is_remote) === 1,
+        isRemote: r.is_remote === true || r.is_remote === 1,
         remoteScope: (r.remote_scope as string | null) ?? null,
       }),
     );

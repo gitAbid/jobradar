@@ -120,6 +120,22 @@ export interface NewListingRow {
   description: string;
 }
 
+/** Placeholder casts per column; JSON is bound as text (a bare `$n::jsonb` double-encodes in postgres.js). */
+const COLUMN_CASTS: Record<string, string> = {
+  tags: "::text::jsonb",
+  skills: "::text::jsonb",
+  posted_at: "::timestamptz",
+  deadline: "::timestamptz",
+  fetched_at: "::timestamptz",
+};
+
+/** Adapter-supplied date text -> ISO string, or null when absent/unparseable (a bad value must not fail a whole insert). */
+function tsOrNull(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
 const INSERT_COLUMNS = [
   "board_id",
   "external_id",
@@ -158,19 +174,19 @@ export async function insertListings(boardId: number, rows: NewListingRow[]): Pr
         r.title,
         r.company,
         r.location,
-        r.isRemote ? 1 : 0,
-        r.visaSponsorship ? 1 : 0,
+        r.isRemote,
+        r.visaSponsorship,
         r.remoteScope,
         r.tags,
         r.skills,
         r.url,
-        r.postedAt,
-        r.deadline,
+        tsOrNull(r.postedAt),
+        tsOrNull(r.deadline),
         r.fetchedAt,
         r.searchText,
         r.description,
       );
-      return `(${INSERT_COLUMNS.map((_, n) => `$${base + n + 1}`).join(", ")})`;
+      return `(${INSERT_COLUMNS.map((c, n) => `$${base + n + 1}${COLUMN_CASTS[c] ?? ""}`).join(", ")})`;
     });
     inserted += await run(
       `insert into listings (${INSERT_COLUMNS.join(", ")}) values ${tuples.join(", ")}
@@ -186,7 +202,7 @@ export async function knownEnrichedExternalIds(
   boardId: number,
   by: "description" | "skills",
 ): Promise<Set<string>> {
-  const filter = by === "description" ? "description <> ''" : "skills <> '[]'";
+  const filter = by === "description" ? "description <> ''" : "skills <> '[]'::jsonb";
   const rows = await q<{ external_id: string }>(
     `select external_id from listings where board_id = $1 and ${filter}`,
     [boardId],
@@ -199,7 +215,7 @@ export interface EnrichPatch {
   searchText: string;
   skills: string;
   description: string;
-  visaSponsorship?: number;
+  visaSponsorship?: boolean;
   company?: string;
   postedAt?: string | null;
   deadline?: string | null;
@@ -213,8 +229,8 @@ const ENRICH_COLUMNS: Array<[string, (p: EnrichPatch) => unknown]> = [
   ["skills", (p) => p.skills],
   ["visa_sponsorship", (p) => p.visaSponsorship],
   ["company", (p) => p.company],
-  ["posted_at", (p) => p.postedAt],
-  ["deadline", (p) => p.deadline],
+  ["posted_at", (p) => (p.postedAt === undefined ? undefined : tsOrNull(p.postedAt))],
+  ["deadline", (p) => (p.deadline === undefined ? undefined : tsOrNull(p.deadline))],
   ["location", (p) => p.location],
   ["tags", (p) => p.tags],
   ["description", (p) => p.description],
@@ -235,8 +251,8 @@ export async function persistEnrichment(
   const columns = ENRICH_COLUMNS.filter(([, get]) =>
     patches.some((p) => get(p) !== undefined),
   );
-  const setClause = columns.map(([col], n) => `${col} = $${n + 1}`).join(", ");
-  const extraWhere = opts.onlyWhenUnenriched ? " and skills = '[]'" : "";
+  const setClause = columns.map(([col], n) => `${col} = $${n + 1}${COLUMN_CASTS[col] ?? ""}`).join(", ");
+  const extraWhere = opts.onlyWhenUnenriched ? " and skills = '[]'::jsonb" : "";
   for (const p of patches) {
     const values = columns.map(([, get]) => get(p));
     await run(
@@ -273,9 +289,9 @@ interface BoardRow {
   name: string;
   type: string;
   url: string;
-  enabled: number;
-  filter_keywords: string;
-  last_fetched_at: string | null;
+  enabled: boolean | number;
+  filter_keywords: unknown;
+  last_fetched_at: Date | string | null;
   last_status: string | null;
   fetch_interval_hours: number;
 }
@@ -286,9 +302,9 @@ export function rowToBoard(r: BoardRow): Board {
     name: r.name,
     type: r.type as BoardType,
     url: r.url,
-    enabled: r.enabled === 1,
+    enabled: isTrue(r.enabled),
     filterKeywords: safeParse(r.filter_keywords),
-    lastFetchedAt: r.last_fetched_at,
+    lastFetchedAt: toIsoOrNull(r.last_fetched_at),
     lastStatus: r.last_status,
     fetchIntervalHours: Number(r.fetch_interval_hours),
   };
@@ -302,20 +318,20 @@ interface ListingRow {
   title: string;
   company: string;
   location: string;
-  is_remote: number;
-  visa_sponsorship: number;
+  is_remote: boolean | number;
+  visa_sponsorship: boolean | number;
   remote_scope?: string | null;
-  tags: string;
-  skills?: string;
+  tags: unknown;
+  skills?: unknown;
   url: string;
-  posted_at: string | null;
-  deadline?: string | null;
-  fetched_at: string;
+  posted_at: Date | string | null;
+  deadline?: Date | string | null;
+  fetched_at: Date | string;
   status: string;
-  user_tags: string;
+  user_tags: unknown;
   search_text?: string;
   description?: string;
-  board_filter_keywords?: string;
+  board_filter_keywords?: unknown;
 }
 
 export function rowToListing(r: ListingRow): Listing & {
@@ -332,27 +348,41 @@ export function rowToListing(r: ListingRow): Listing & {
     title: r.title,
     company: r.company,
     location: r.location,
-    isRemote: r.is_remote === 1,
-    visaSponsorship: r.visa_sponsorship === 1,
+    isRemote: isTrue(r.is_remote),
+    visaSponsorship: isTrue(r.visa_sponsorship),
     remoteScope: (r.remote_scope as "anywhere" | "restricted" | null) ?? null,
     tags: safeParse(r.tags),
-    skills: safeParse(r.skills ?? "[]"),
+    skills: safeParse(r.skills),
     url: r.url,
-    postedAt: r.posted_at,
-    deadline: r.deadline ?? null,
-    fetchedAt: r.fetched_at,
+    postedAt: toIsoOrNull(r.posted_at),
+    deadline: toIsoOrNull(r.deadline),
+    fetchedAt: toIsoOrNull(r.fetched_at) ?? "",
     status: r.status as ListingStatus,
     userTags: safeParse(r.user_tags),
-    boardFilterKeywords: safeParse(r.board_filter_keywords ?? "[]"),
+    boardFilterKeywords: safeParse(r.board_filter_keywords),
     searchText: r.search_text ?? "",
     description: r.description ?? "",
   };
 }
 
-function safeParse(json: string): string[] {
+function isTrue(v: unknown): boolean {
+  return v === true || v === 1;
+}
+
+/** timestamptz arrives as Date (postgres.js / PGlite); API output stays an ISO string. */
+function toIsoOrNull(v: Date | string | null | undefined): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString();
+  return v;
+}
+
+/** jsonb arrives parsed; tolerate legacy JSON text and anything malformed. */
+function safeParse(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(String);
+  if (typeof v !== "string") return [];
   try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) ? v.map(String) : [];
+    const parsed = JSON.parse(v);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
   } catch {
     return [];
   }

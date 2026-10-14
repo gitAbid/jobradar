@@ -50,7 +50,7 @@ export async function addBoardAction(formData: FormData): Promise<void> {
 
   try {
     await run(
-      "insert into boards (name, type, url, filter_keywords) values ($1, $2, $3, $4)",
+      "insert into boards (name, type, url, filter_keywords) values ($1, $2, $3, $4::text::jsonb)",
       [name, type, url, JSON.stringify(keywords)],
     );
   } catch {
@@ -62,7 +62,7 @@ export async function addBoardAction(formData: FormData): Promise<void> {
 export async function updateBoardKeywordsAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return;
-  await run("update boards set filter_keywords = $1 where id = $2", [
+  await run("update boards set filter_keywords = $1::text::jsonb where id = $2", [
     JSON.stringify(parseKeywords(formData.get("keywords"))),
     id,
   ]);
@@ -73,7 +73,7 @@ export async function toggleBoardEnabledAction(formData: FormData): Promise<void
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return;
   await run(
-    "update boards set enabled = case when enabled = 1 then 0 else 1 end where id = $1",
+    "update boards set enabled = not enabled where id = $1",
     [id],
   );
   await commit();
@@ -117,19 +117,14 @@ export async function addUserTagAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   const tag = String(formData.get("tag") ?? "").trim().slice(0, 40);
   if (!Number.isInteger(id) || !tag) return;
-  const row = await qOne<{ user_tags: string }>(
+  const row = await qOne<{ user_tags: unknown }>(
     "select user_tags from listings where id = $1",
     [id],
   );
   if (!row) return;
-  let tags: string[] = [];
-  try {
-    tags = JSON.parse(row.user_tags);
-  } catch {
-    tags = [];
-  }
+  const tags: string[] = Array.isArray(row.user_tags) ? row.user_tags.map(String) : [];
   if (!tags.includes(tag)) tags.push(tag);
-  await run("update listings set user_tags = $1 where id = $2", [JSON.stringify(tags), id]);
+  await run("update listings set user_tags = $1::text::jsonb where id = $2", [JSON.stringify(tags), id]);
   await commit();
 }
 
@@ -137,18 +132,13 @@ export async function removeUserTagAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   const tag = String(formData.get("tag") ?? "");
   if (!Number.isInteger(id) || !tag) return;
-  const row = await qOne<{ user_tags: string }>(
+  const row = await qOne<{ user_tags: unknown }>(
     "select user_tags from listings where id = $1",
     [id],
   );
   if (!row) return;
-  let tags: string[] = [];
-  try {
-    tags = JSON.parse(row.user_tags);
-  } catch {
-    tags = [];
-  }
-  await run("update listings set user_tags = $1 where id = $2", [
+  const tags: string[] = Array.isArray(row.user_tags) ? row.user_tags.map(String) : [];
+  await run("update listings set user_tags = $1::text::jsonb where id = $2", [
     JSON.stringify(tags.filter((t) => t !== tag)),
     id,
   ]);
@@ -168,7 +158,7 @@ export async function toggleFollowCompanyAction(formData: FormData): Promise<voi
   if (exists) {
     await run("delete from followed_companies where lower(name) = lower($1)", [name]);
   } else {
-    await run("insert into followed_companies (name, created_at) values ($1, $2)", [
+    await run("insert into followed_companies (name, created_at) values ($1, $2::timestamptz)", [
       name,
       new Date().toISOString(),
     ]);
@@ -188,7 +178,7 @@ export async function togglePinCountryAction(formData: FormData): Promise<void> 
   if (exists) {
     await run("delete from pinned_countries where lower(name) = lower($1)", [name]);
   } else {
-    await run("insert into pinned_countries (name, created_at) values ($1, $2)", [
+    await run("insert into pinned_countries (name, created_at) values ($1, $2::timestamptz)", [
       name,
       new Date().toISOString(),
     ]);

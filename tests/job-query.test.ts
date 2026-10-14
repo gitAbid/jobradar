@@ -89,7 +89,7 @@ function toListing(f: Fx): FilterableListing {
 
 beforeAll(async () => {
   db = new PGlite();
-  for (const file of ["001_baseline.sql", "002_feed_index.sql", "003_country.sql"]) {
+  for (const file of ["001_baseline.sql", "002_feed_index.sql", "003_country.sql", "004_types.sql"]) {
     await db.exec(readFileSync(join(process.cwd(), "db/migrations", file), "utf8"));
   }
   for (const b of BOARDS) {
@@ -104,8 +104,8 @@ beforeAll(async () => {
       `insert into listings (id, board_id, external_id, title, company, location, is_remote, visa_sponsorship,
          remote_scope, tags, skills, posted_at, fetched_at, status, search_text, description)
        overriding system value values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-      [l.id, l.boardId, l.externalId, l.title, l.company, l.location, l.isRemote ? 1 : 0,
-        l.visaSponsorship ? 1 : 0, l.remoteScope, JSON.stringify(l.tags), JSON.stringify(l.skills),
+      [l.id, l.boardId, l.externalId, l.title, l.company, l.location, l.isRemote,
+        l.visaSponsorship, l.remoteScope, JSON.stringify(l.tags), JSON.stringify(l.skills),
         l.postedAt, l.fetchedAt, l.status, l.searchText, l.description],
     );
   }

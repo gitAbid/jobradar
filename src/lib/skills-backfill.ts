@@ -12,18 +12,13 @@ export const SKILLS_VERSION = "2";
 export async function backfillSkillsIfNeeded(): Promise<void> {
   if ((await getSetting("skills_version")) === SKILLS_VERSION) return;
 
-  const rows = await q<{ id: number; tags: string; search_text: string }>(
-    `select id, tags, search_text from listings where skills = '[]'`,
+  const rows = await q<{ id: number; tags: unknown; search_text: string }>(
+    `select id, tags, search_text from listings where skills = '[]'::jsonb`,
   );
 
   let filled = 0;
   for (const r of rows) {
-    let tags: string[] = [];
-    try {
-      tags = JSON.parse(r.tags);
-    } catch {
-      tags = [];
-    }
+    const tags: string[] = Array.isArray(r.tags) ? r.tags.map(String) : [];
     // search_text already contains lowercased title+company+location+tags+description
     const skills = extractSkills({
       title: "",
@@ -31,7 +26,7 @@ export async function backfillSkillsIfNeeded(): Promise<void> {
       description: r.search_text,
     });
     if (skills.length > 0) {
-      await run(`update listings set skills = $1 where id = $2`, [JSON.stringify(skills), r.id]);
+      await run(`update listings set skills = $1::text::jsonb where id = $2`, [JSON.stringify(skills), r.id]);
       filled++;
     }
   }

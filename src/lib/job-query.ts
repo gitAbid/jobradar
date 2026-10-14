@@ -121,7 +121,7 @@ export function countryCaseSql(loc = "l.location"): string {
     ([country, re]) => `when ${loc} ~* ${sqlLiteral(jsRegexToPg(re.source))} then ${sqlLiteral(country)}`,
   );
   return `case ${whens.join(" ")}
-    when (l.is_remote = 1 and l.remote_scope = 'anywhere') or ${loc} ~* 'remote|anywhere' then 'Remote · Anywhere'
+    when (l.is_remote and l.remote_scope = 'anywhere') or ${loc} ~* 'remote|anywhere' then 'Remote · Anywhere'
     else 'Other' end`;
 }
 
@@ -180,18 +180,18 @@ function build(
 
   const rest: string[] = ["x.status <> 'hidden'"];
   if (sp.status) rest.push(`x.status = ${p.add(sp.status)}::text`);
-  if (sp.remote === "1") rest.push("x.is_remote = 1");
-  else if (sp.remote === "anywhere") rest.push("(x.is_remote = 1 and x.remote_scope = 'anywhere')");
-  else if (sp.remote === "restricted") rest.push("(x.is_remote = 1 and x.remote_scope = 'restricted')");
-  if (sp.visa === "1") rest.push("x.visa_sponsorship = 1");
+  if (sp.remote === "1") rest.push("x.is_remote");
+  else if (sp.remote === "anywhere") rest.push("(x.is_remote and x.remote_scope = 'anywhere')");
+  else if (sp.remote === "restricted") rest.push("(x.is_remote and x.remote_scope = 'restricted')");
+  if (sp.visa === "1") rest.push("x.visa_sponsorship");
 
   if (sp.q) {
     const pat = p.add(`%${escapeLike(sp.q)}%`);
     rest.push(`(x.title ilike ${pat}::text
       or x.company ilike ${pat}::text
       or x.location ilike ${pat}::text
-      or exists (select 1 from jsonb_array_elements_text(x.tags::jsonb) t where t ilike ${pat}::text)
-      or exists (select 1 from jsonb_array_elements_text(x.skills::jsonb) s where s ilike ${pat}::text))`);
+      or exists (select 1 from jsonb_array_elements_text(x.tags) t where t ilike ${pat}::text)
+      or exists (select 1 from jsonb_array_elements_text(x.skills) s where s ilike ${pat}::text))`);
   }
 
   // global keyword filter (skipped by "Show all"): global ∪ per-board keywords
@@ -214,7 +214,7 @@ function build(
 
   const facetPred: Record<FacetParam, string | null> = {
     skill: selections.skill.length
-      ? `exists (select 1 from jsonb_array_elements_text(x.skills::jsonb) s
+      ? `exists (select 1 from jsonb_array_elements_text(x.skills) s
            where s in (select jsonb_array_elements_text(${p.json(selections.skill)})))`
       : null,
     country: selections.country.length
@@ -247,7 +247,7 @@ function build(
       lower(l.company || '|' || l.title) as dk,
       coalesce(l.country, ${countryCaseSql()}) as country,
       (l.title || ' ' || l.company || ' ' || l.location || ' ' ||
-        array_to_string(array(select jsonb_array_elements_text(l.tags::jsonb)), ' ')) as hay
+        array_to_string(array(select jsonb_array_elements_text(l.tags)), ' ')) as hay
     from listings l join boards b on b.id = l.board_id
     ${opts.bd ? `where ${bdWhereSql()}` : ""}
   )`;
@@ -271,7 +271,7 @@ export function buildFacetQuery(
 
   const parts = [
     `select 'skill' as k, s.name, count(*)::int as n
-       ${fromBase()}, jsonb_array_elements_text(x.skills::jsonb) as s(name)
+       ${fromBase()}, jsonb_array_elements_text(x.skills) as s(name)
        where ${where("skill")} group by s.name`,
     `select 'country', x.country, count(*)::int
        ${fromBase()} where ${where("country")} group by x.country`,
@@ -333,6 +333,12 @@ export function buildPageQuery(
 
 // ── execution ──────────────────────────────────────────────────────────────
 
+function isoOrNull(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString();
+  return String(v);
+}
+
 function parseStringArray(json: unknown): string[] {
   if (typeof json !== "string") return Array.isArray(json) ? json.map(String) : [];
   try {
@@ -343,7 +349,7 @@ function parseStringArray(json: unknown): string[] {
   }
 }
 
-/** Row (pg snake_case, text JSON columns) → FilterableListing. `searchText` is not selected. */
+/** Row (pg snake_case, jsonb columns) → FilterableListing. `searchText` is not selected. */
 export function rowToFeedListing(r: Record<string, unknown>): FilterableListing {
   return {
     id: Number(r.id),
@@ -353,15 +359,15 @@ export function rowToFeedListing(r: Record<string, unknown>): FilterableListing 
     title: String(r.title),
     company: String(r.company ?? ""),
     location: String(r.location ?? ""),
-    isRemote: Number(r.is_remote) === 1,
-    visaSponsorship: Number(r.visa_sponsorship) === 1,
+    isRemote: r.is_remote === true || r.is_remote === 1,
+    visaSponsorship: r.visa_sponsorship === true || r.visa_sponsorship === 1,
     remoteScope: (r.remote_scope as "anywhere" | "restricted" | null) ?? null,
     tags: parseStringArray(r.tags),
     skills: parseStringArray(r.skills),
     url: String(r.url ?? ""),
-    postedAt: (r.posted_at as string | null) ?? null,
-    deadline: (r.deadline as string | null) ?? null,
-    fetchedAt: String(r.fetched_at),
+    postedAt: isoOrNull(r.posted_at),
+    deadline: isoOrNull(r.deadline),
+    fetchedAt: isoOrNull(r.fetched_at) ?? "",
     status: r.status as ListingStatus,
     userTags: parseStringArray(r.user_tags),
     description: typeof r.description === "string" ? r.description : "",

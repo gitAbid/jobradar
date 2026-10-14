@@ -275,7 +275,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test, build.
 
-## P2.4 Proper column types  [ ]   model: sonnet   depends: P2.3
+## P2.4 Proper column types  [x]   model: sonnet   depends: P2.3
 **Goal:** Postgres-native types.
 
 **Files:** `db/migrations/004_types.sql` (003 is taken), `src/db/index.ts` (`rowToListing`, `rowToBoard`, `insertListings`, `persistEnrichment`), `src/lib/api/keys-store.ts`, `src/lib/settings.ts`, affected tests.
@@ -285,7 +285,7 @@ Sources: `node_modules/next/dist/docs/` only.
 - 0/1 int flags become `boolean`.
 - JSON-in-text columns (`tags`, `skills`, `user_tags`, `filter_keywords`) become `jsonb`.
 - The mappers return the same TypeScript types as before.
-- The migration is tested against `STAGING_DATABASE_URL`; Opus runs it.
+- The migration is tested against `STAGING_DATABASE_URL`; Opus runs it. **Done on staging: 0 of 27,301 date values unparseable; 004 applied in 5.6 s; rerun no-op; flag/tag counts identical to prod; all pages 200 on staging.**
 
 **Notes (Opus):**
 - Every SQL string in `src/` and `scripts/` that relies on the old types must change in the same card: `= 1`/`= 0` flag comparisons (`is_remote`, `visa_sponsorship`, `enabled`, …), `::jsonb` casts on text JSON columns, JSON.stringify'd writes, text timestamp comparisons (e.g. the expiry `fetched_at < $1`). `grep -rn` for each column name. You may edit any file containing such SQL (including `src/lib/job-query.ts`, `src/lib/country-backfill.ts`, `src/lib/refresh*.ts`, `src/app/**/page.tsx`, `src/app/actions.ts`, `scripts/seed.ts`); list them.
