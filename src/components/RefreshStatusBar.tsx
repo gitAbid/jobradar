@@ -56,7 +56,7 @@ export function RefreshStatusBar({ soundEnabled }: { soundEnabled: boolean }) {
     return () => clearTimeout(timer);
   }, [finishedAt]);
   const summaryFresh = finishedAt != null && freshFinishedAt === finishedAt;
-  const showSummary = !active && run?.finishedAt != null && summaryFresh && run.finishedAt !== state.dismissedFinishedAt;
+  const showSummary = !active && summaryFresh && finishedAt !== state.dismissedFinishedAt;
 
   useEffect(() => {
     if (!showSummary) return;
