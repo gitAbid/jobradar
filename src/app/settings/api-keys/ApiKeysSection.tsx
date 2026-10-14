@@ -2,6 +2,7 @@ import { KeyRound } from "lucide-react";
 import { listApiKeys } from "@/lib/api/keys";
 import { apiKeys } from "@/lib/api/keys-store";
 import { CreateKeyForm } from "@/components/api-keys/CreateKeyForm";
+import { RelativeTime } from "@/components/RelativeTime";
 import { EmptyState } from "@/components/ui";
 import { RevokeButton } from "@/components/api-keys/RevokeButton";
 
@@ -42,11 +43,15 @@ export async function ApiKeysSection({ userId }: { userId: string }) {
                   <p className="mt-0.5 font-mono text-xs text-slate-400">{k.prefix}…</p>
                 </div>
                 <div className="text-right text-xs text-slate-500">
-                  <p>Created {new Date(k.createdAt).toLocaleDateString()}</p>
+                  <p><RelativeTime prefix="Created " iso={k.createdAt} /></p>
                   <p className="mt-0.5">
-                    {k.lastUsedAt
-                      ? `Used ${new Date(k.lastUsedAt).toLocaleString()} · ${k.requestCount} reqs`
-                      : "Never used"}
+                    {k.lastUsedAt ? (
+                      <>
+                        <RelativeTime prefix="Used " iso={k.lastUsedAt} /> · {k.requestCount} reqs
+                      </>
+                    ) : (
+                      "Never used"
+                    )}
                   </p>
                 </div>
                 <RevokeButton id={k.id} revoked={k.revokedAt !== null} />

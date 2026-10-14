@@ -78,6 +78,7 @@ export function StatusButton({
       title={title}
       data-status={status}
       aria-pressed={active}
+      className="pointer-coarse:min-h-11"
       disabled={busy}
       pending={pending}
       onClick={onClick}

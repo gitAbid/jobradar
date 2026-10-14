@@ -178,6 +178,7 @@ export default async function FollowingPage({
         />
       ) : (
         <div className="flex flex-col gap-3">
+          <h2 className="sr-only">Openings from followed companies</h2>
           {activeCompany && (
             <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs font-medium text-amber-900">
               Showing openings from <strong>{activeCompany}</strong> only. <Link href="/following" className="font-bold underline">Show all</Link>

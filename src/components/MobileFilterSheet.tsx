@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, SlidersHorizontal } from "lucide-react";
 import { FacetSection, type FacetValue } from "@/components/FacetSection";
 
@@ -37,10 +38,60 @@ export function MobileFilterSheet({
   onClearAll,
 }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const opener = openerRef.current;
+    const dialog = dialogRef.current;
+
+    // Background inert: everything in <body> except the portal'd dialog.
+    const inerted: Element[] = [];
+    for (const el of Array.from(document.body.children)) {
+      if (el === dialog || el.hasAttribute("inert")) continue;
+      el.setAttribute("inert", "");
+      inerted.push(el);
+    }
+    closeRef.current?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMobileOpen(false);
+        return;
+      }
+      if (e.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !dialog.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !dialog.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      for (const el of inerted) el.removeAttribute("inert");
+      opener?.focus();
+    };
+  }, [mobileOpen]);
 
   return (
     <div className="lg:hidden">
       <button
+        ref={openerRef}
         type="button"
         onClick={() => setMobileOpen(true)}
         className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
@@ -56,11 +107,12 @@ export function MobileFilterSheet({
         )}
       </button>
 
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Filter jobs">
+      {mobileOpen && createPortal(
+        <div ref={dialogRef} className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Filter jobs">
           <button
             type="button"
             aria-label="Dismiss filter panel"
+            tabIndex={-1}
             className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
             onClick={() => setMobileOpen(false)}
           />
@@ -72,6 +124,7 @@ export function MobileFilterSheet({
                 <p className="mt-1 text-sm text-slate-500">Narrow the list without losing your place.</p>
               </div>
               <button
+                ref={closeRef}
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close filters"
@@ -118,7 +171,8 @@ export function MobileFilterSheet({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

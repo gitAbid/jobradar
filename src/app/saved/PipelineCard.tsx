@@ -15,7 +15,7 @@ function RemoveTagForm({ id, tag }: { id: number; tag: string }) {
     <form action={action} className="inline">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="tag" value={tag} />
-      <TagChip variant="user" removable disabled={pending}>
+      <TagChip variant="user" removable removeLabel={`Remove tag #${tag}`} disabled={pending}>
         #{tag}
       </TagChip>
     </form>
@@ -33,7 +33,7 @@ function AddTagForm({ id, title }: { id: number; title: string }) {
         aria-label={`Add tag to ${title}`}
         maxLength={40}
         readOnly={pending}
-        className="min-h-8 w-20 rounded-lg border border-dashed border-slate-300 bg-white px-2 py-0.5 text-[11px] placeholder:text-slate-400 focus:w-28 focus:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-100"
+        className="min-h-8 pointer-coarse:min-h-11 w-20 rounded-lg border border-dashed border-slate-300 bg-white px-2 py-0.5 text-[11px] placeholder:text-slate-400 focus:w-28 focus:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-100"
       />
     </form>
   );
@@ -47,14 +47,17 @@ export function PipelineCard({ listing, followed }: { listing: FilterableListing
 
   return (
     <article className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-[0_6px_18px_rgb(15_42_67/0.05)] transition-shadow hover:shadow-[0_10px_24px_rgb(15_42_67/0.09)] sm:p-4">
-      <a
-        href={listing.url}
-        target="_blank"
-        rel="noreferrer"
-        className="text-sm font-bold leading-snug text-slate-950 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-      >
-        {listing.title}
-      </a>
+      <h3 className="text-sm font-bold leading-snug text-slate-950">
+        <a
+          href={listing.url}
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          {listing.title}
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+      </h3>
       {listing.company ? (
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
           <CompanyBadge company={listing.company} followed={followed} />
@@ -86,6 +89,7 @@ export function PipelineCard({ listing, followed }: { listing: FilterableListing
           variant="secondary"
           title="Remove from board"
           aria-label={`Remove ${listing.title} from pipeline`}
+          className="pointer-coarse:min-w-11"
           disabled={busy}
           pending={target === "new"}
           onClick={() => set("new", "Removed from pipeline")}

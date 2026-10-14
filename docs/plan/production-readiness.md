@@ -539,7 +539,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.8 Accessibility pass  [ ]   model: sonnet   depends: P5.6
+## P5.8 Accessibility pass  [x] (Lighthouse run deferred to P5.9)   model: sonnet   depends: P5.6
 **Files:** `src/components/MobileFilterSheet.tsx`, `FacetSection.tsx`, `ListingCard.tsx`, `StatusButton.tsx`, `TagChip.tsx`, `Pagination.tsx`, `FilterBar.tsx`, `TestBoardButton.tsx`, `CopyButton.tsx`, and the date rendering in the admin and settings pages.
 
 **Acceptance:**

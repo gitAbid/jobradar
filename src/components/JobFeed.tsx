@@ -57,6 +57,7 @@ export function JobFeed({
 
   return (
     <>
+      <h2 className="sr-only">Job listings</h2>
       <div className="flex flex-col gap-3">
         {view.entries.map(({ listing, matched }) => (
           <ListingCard

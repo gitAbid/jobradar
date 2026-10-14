@@ -2,9 +2,11 @@
 
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { QUICK_FILTER_KEYS, useFacetParams } from "@/lib/use-facet-params";
 
 export function FilterBar() {
+  const pathname = usePathname();
   const { params, setParam, clearParams } = useFacetParams();
   const clearQuickFilters = useCallback(() => clearParams(QUICK_FILTER_KEYS), [clearParams]);
 
@@ -20,6 +22,9 @@ export function FilterBar() {
       <div className="flex flex-wrap items-center gap-2">
       <form
         key={`search-${q}`}
+        action={pathname}
+        method="get"
+        role="search"
         className="flex min-h-11 min-w-56 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 transition-colors focus-within:border-teal-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-100"
         onSubmit={(e) => {
           e.preventDefault();
@@ -27,7 +32,13 @@ export function FilterBar() {
           setParam("q", input);
         }}
       >
-        <Search className="h-4 w-4 text-slate-400" />
+        {/* no-JS fallback: a plain GET keeps every other param (page resets) */}
+        {Array.from(params.entries())
+          .filter(([k]) => k !== "q" && k !== "page")
+          .map(([k, v], i) => (
+            <input key={`${k}-${i}`} type="hidden" name={k} value={v} />
+          ))}
+        <Search aria-hidden="true" className="h-4 w-4 text-slate-400" />
         <input
           name="q"
           defaultValue={q}
@@ -35,12 +46,15 @@ export function FilterBar() {
           placeholder="Search title, company, skill..."
           className="w-full bg-transparent text-[15px] outline-none placeholder:text-slate-400"
         />
+        <button type="submit" className="sr-only">
+          Search
+        </button>
         {q && (
           <button
             type="button"
             onClick={() => setParam("q", "")}
             aria-label="Clear search"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="inline-flex h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             <X className="h-4 w-4" />
           </button>
@@ -102,7 +116,7 @@ export function FilterBar() {
           <button
             type="button"
             onClick={clearQuickFilters}
-            className="text-xs font-semibold text-teal-700 hover:text-teal-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="inline-flex min-h-8 pointer-coarse:min-h-11 items-center text-xs font-semibold text-teal-700 hover:text-teal-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             Reset
           </button>

@@ -27,7 +27,7 @@ export function PinnedCountryChip({ country }: { country: string }) {
       <Link
         href={`/?country=${encodeURIComponent(country)}`}
         title={`Show ${country} jobs`}
-        className="inline-flex min-h-8 items-center gap-1 py-1 pl-2.5 pr-1 hover:text-teal-950"
+        className="inline-flex min-h-8 pointer-coarse:min-h-11 items-center gap-1 py-1 pl-2.5 pr-1 hover:text-teal-950"
       >
         <MapPin className="h-3.5 w-3.5 text-teal-600" />
         {country}
@@ -37,7 +37,7 @@ export function PinnedCountryChip({ country }: { country: string }) {
         onClick={unpin}
         title={`Unpin ${country}`}
         aria-label={`Unpin ${country}`}
-        className="inline-flex min-h-8 items-center p-1.5 text-teal-400 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
+        className="inline-flex min-h-8 min-w-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11 items-center justify-center p-1.5 text-teal-400 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
       >
         <X className="h-3.5 w-3.5" />
       </button>

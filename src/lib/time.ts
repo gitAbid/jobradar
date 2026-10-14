@@ -8,3 +8,8 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
   if (hours >= 1) return `${hours}h ago`;
   return "just now";
 }
+
+/** Server-safe absolute fallback for <RelativeTime>: the ISO date, "YYYY-MM-DD". */
+export function isoDate(iso: string): string {
+  return iso.slice(0, 10);
+}

@@ -4,8 +4,9 @@ import { ListingStatusButtons } from "@/components/ListingStatusButtons";
 import { FreshnessBadge, CARD_ACCENT } from "@/components/FreshnessBadge";
 import { Highlight } from "@/components/Highlight";
 import { TagChip } from "@/components/TagChip";
+import { SkillChipLink } from "@/components/SkillChipLink";
+import { RelativeTime } from "@/components/RelativeTime";
 import { freshnessOf } from "@/lib/freshness";
-import { timeAgo } from "@/lib/time";
 import type { FilterableListing } from "@/lib/types";
 
 export function ListingCard({
@@ -17,7 +18,6 @@ export function ListingCard({
   matched: string[];
   followedCompanies?: Set<string>;
 }) {
-  const posted = listing.postedAt ? timeAgo(listing.postedAt) : null;
   const freshness = freshnessOf(listing);
   const isFollowed = followedCompanies?.has(listing.company.toLowerCase()) ?? false;
 
@@ -28,15 +28,18 @@ export function ListingCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <a
-              href={listing.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-start gap-1 text-[15px] font-bold leading-snug tracking-[-0.01em] text-slate-950 hover:text-teal-800 sm:text-base"
-            >
-              <Highlight text={listing.title} keywords={matched} />
-              <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400 transition-colors group-hover:text-teal-500" />
-            </a>
+            <h3 className="text-[15px] font-bold leading-snug tracking-[-0.01em] text-slate-950 sm:text-base">
+              <a
+                href={listing.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-start gap-1 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+              >
+                <Highlight text={listing.title} keywords={matched} />
+                <ExternalLink aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400 transition-colors group-hover:text-teal-500" />
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+            </h3>
             <FreshnessBadge freshness={freshness} postedAt={listing.postedAt} deadline={listing.deadline} />
             {listing.isRemote && listing.remoteScope === "anywhere" && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-teal-800">
@@ -65,7 +68,7 @@ export function ListingCard({
               {listing.location || "—"}
             </span>
             <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-600">{listing.boardName}</span>
-            {posted && <span className="font-medium text-slate-400" title={listing.postedAt ?? ""}>{posted}</span>}
+            {listing.postedAt && <span className="font-medium text-slate-400"><RelativeTime iso={listing.postedAt} /></span>}
           </div>
         </div>
       </div>
@@ -73,9 +76,7 @@ export function ListingCard({
       {(listing.skills.length > 0 || listing.tags.length > 0 || listing.userTags.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {listing.skills.slice(0, 10).map((s) => (
-            <TagChip key={s} variant="skill" href={`/?q=${encodeURIComponent(s)}`} title={`Show ${s} jobs`}>
-              {s}
-            </TagChip>
+            <SkillChipLink key={s} skill={s} />
           ))}
           {/* raw board tags that aren't already covered by a detected skill */}
           {listing.tags

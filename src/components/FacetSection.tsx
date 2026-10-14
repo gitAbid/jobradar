@@ -46,11 +46,12 @@ export function FacetSection({
         <button
           type="button"
           onClick={() => onToggleOpen(param)}
-          className="flex min-h-8 min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="flex min-h-8 pointer-coarse:min-h-11 min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           aria-expanded={open}
           aria-controls={valuesId}
         >
           <ChevronDown
+            aria-hidden="true"
             className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${
               open ? "" : "-rotate-90"
             }`}
@@ -69,7 +70,7 @@ export function FacetSection({
           <button
             type="button"
             onClick={() => onClearParam(param)}
-            className="rounded-md px-1.5 py-1 text-[11px] normal-case text-teal-700 hover:bg-teal-50 hover:text-teal-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="rounded-md px-1.5 py-1 pointer-coarse:min-h-11 pointer-coarse:px-3 text-[11px] normal-case text-teal-700 hover:bg-teal-50 hover:text-teal-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
             title={`Clear ${title} filters`}
           >
             clear
@@ -85,7 +86,7 @@ export function FacetSection({
             return (
               <li key={name} className="group/row flex items-center gap-0.5">
                 <label
-                  className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-sm transition ${
+                  className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 pointer-coarse:min-h-11 text-sm transition ${
                     active
                       ? "bg-emerald-50 font-medium text-emerald-800"
                       : "text-slate-600 hover:bg-slate-50"

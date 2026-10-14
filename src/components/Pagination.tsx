@@ -33,20 +33,22 @@ export function Pagination({ currentPage, totalPages }: Props) {
   if (totalPages <= 1) return null;
 
   const navClass =
-    "inline-flex min-h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500";
+    "inline-flex min-h-11 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500";
+
+  const disabledClass =
+    "inline-flex min-h-11 cursor-not-allowed items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-400";
 
   return (
     <nav className="flex flex-wrap items-center justify-center gap-1.5 pt-2" aria-label="Pagination">
-      <Link
-        href={hrefFor(Math.max(1, currentPage - 1))}
-        aria-disabled={currentPage === 1}
-        className={navClass}
-        onClick={(e) => {
-          if (currentPage === 1) e.preventDefault();
-        }}
-      >
-        <ChevronLeft className="h-4 w-4" /> Prev
-      </Link>
+      {currentPage === 1 ? (
+        <span aria-disabled="true" className={disabledClass}>
+          <ChevronLeft className="h-4 w-4" /> Prev
+        </span>
+      ) : (
+        <Link href={hrefFor(currentPage - 1)} className={navClass}>
+          <ChevronLeft className="h-4 w-4" /> Prev
+        </Link>
+      )}
 
       {buildPages(currentPage, totalPages).map((p, i) =>
         p === "gap" ? (
@@ -57,7 +59,7 @@ export function Pagination({ currentPage, totalPages }: Props) {
           <span
             key={p}
             aria-current="page"
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl bg-slate-900 px-2.5 text-sm font-semibold text-white"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-slate-900 px-2.5 text-sm font-semibold text-white"
           >
             {p}
           </span>
@@ -65,23 +67,22 @@ export function Pagination({ currentPage, totalPages }: Props) {
           <Link
             key={p}
             href={hrefFor(p)}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             {p}
           </Link>
         ),
       )}
 
-      <Link
-        href={hrefFor(Math.min(totalPages, currentPage + 1))}
-        aria-disabled={currentPage === totalPages}
-        className={navClass}
-        onClick={(e) => {
-          if (currentPage === totalPages) e.preventDefault();
-        }}
-      >
-        Next <ChevronRight className="h-4 w-4" />
-      </Link>
+      {currentPage === totalPages ? (
+        <span aria-disabled="true" className={disabledClass}>
+          Next <ChevronRight className="h-4 w-4" />
+        </span>
+      ) : (
+        <Link href={hrefFor(currentPage + 1)} className={navClass}>
+          Next <ChevronRight className="h-4 w-4" />
+        </Link>
+      )}
     </nav>
   );
 }

@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/RelativeTime";
 import { q, rowToBoard } from "@/db";
 import { getRefreshIntervalHours } from "@/lib/settings";
 import { AddBoardForm } from "./AddBoardForm";
@@ -94,7 +95,7 @@ function BoardCard({ board: b }: { board: ReturnType<typeof rowToBoard> }) {
             <p className={isHealthy ? "font-semibold text-teal-800" : "font-semibold text-amber-800"}>
               {b.lastStatus ? (isHealthy ? b.lastStatus : b.lastStatus.replace("error · ", "")) : "Not fetched yet"}
             </p>
-            {b.lastFetchedAt && <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Clock3 className="h-3 w-3" />{new Date(b.lastFetchedAt).toLocaleString()}</p>}
+            {b.lastFetchedAt && <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400"><Clock3 className="h-3 w-3" /><RelativeTime iso={b.lastFetchedAt} /></p>}
           </div>
         </div>
 

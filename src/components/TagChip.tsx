@@ -15,6 +15,7 @@ export function TagChip({
   href,
   title,
   removable,
+  removeLabel,
   disabled,
 }: {
   variant: "skill" | "board" | "user";
@@ -22,6 +23,8 @@ export function TagChip({
   href?: string;
   title?: string;
   removable?: boolean;
+  /** Accessible name for the removable chip, e.g. "Remove tag #remote". */
+  removeLabel?: string;
   disabled?: boolean;
 }) {
   if (variant === "skill" && href) {
@@ -29,7 +32,7 @@ export function TagChip({
       <Link
         href={href}
         title={title}
-        className="rounded-lg border border-teal-100 bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-700 transition-colors hover:border-teal-200 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        className="inline-flex items-center rounded-lg border border-teal-100 bg-teal-50 px-2 py-1 text-[11px] pointer-coarse:min-h-11 pointer-coarse:px-3 font-semibold text-teal-700 transition-colors hover:border-teal-200 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
       >
         {children}
       </Link>
@@ -41,11 +44,13 @@ export function TagChip({
   if (removable) {
     return (
       <button
+        type="submit"
         disabled={disabled}
+        aria-label={removeLabel}
         aria-busy={disabled || undefined}
-        className="inline-flex min-h-8 items-center gap-0.5 rounded-lg border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-60"
+        className="inline-flex min-h-8 items-center gap-0.5 pointer-coarse:min-h-11 rounded-lg border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-60"
       >
-        {children} <X className="h-2.5 w-2.5" />
+        {children} <X aria-hidden="true" className="h-2.5 w-2.5" />
       </button>
     );
   }
