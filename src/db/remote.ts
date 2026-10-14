@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { withTimeout } from "@/db/translate";
+import { approxBytes, recordQuery } from "@/db/usage";
 
 // ── Postgres connection (Neon; singleton survives HMR via globalThis) ──
 
@@ -53,6 +54,18 @@ export function getRemoteHarness(): RemoteHarness | undefined {
   return globalThis.__jobradarRemoteHarness;
 }
 
+/** Count every real remote call (failures too); measure bytes for row results. */
+async function counted<R>(p: Promise<R>, measure = true): Promise<R> {
+  try {
+    const r = await p;
+    recordQuery(measure ? approxBytes(r) : 0);
+    return r;
+  } catch (e) {
+    recordQuery(0);
+    throw e;
+  }
+}
+
 /** Remote SELECT; resolves to rows. Times out as a connection failure. */
 export async function remoteQuery<T = Record<string, unknown>>(
   sql: string,
@@ -60,21 +73,27 @@ export async function remoteQuery<T = Record<string, unknown>>(
 ): Promise<T[]> {
   const harness = getRemoteHarness();
   if (harness) return (await harness.query(sql, params)) as T[];
-  return (await withTimeout(
-    getDb().unsafe(sql, params as never[]) as Promise<T[]>,
-    REMOTE_TIMEOUT_MS,
-    "remote query",
-  )) as T[];
+  const rows = await counted(
+    withTimeout(
+      getDb().unsafe(sql, params as never[]) as Promise<T[]>,
+      REMOTE_TIMEOUT_MS,
+      "remote query",
+    ) as Promise<T[]>,
+  );
+  return rows;
 }
 
 /** Remote mutation; resolves to affected-row count. */
 export async function remoteRun(sql: string, params: unknown[] = []): Promise<number> {
   const harness = getRemoteHarness();
   if (harness) return harness.run(sql, params);
-  const result = await withTimeout(
-    getDb().unsafe(sql, params as never[]),
-    REMOTE_TIMEOUT_MS,
-    "remote write",
+  const result = await counted(
+    withTimeout(
+      getDb().unsafe(sql, params as never[]),
+      REMOTE_TIMEOUT_MS,
+      "remote write",
+    ),
+    false,
   );
   return result.count;
 }
@@ -89,11 +108,14 @@ export async function remoteRunReturning<T = Record<string, unknown>>(
     const rows = await harness.query(sql, params);
     return rows as T[];
   }
-  return (await withTimeout(
-    getDb().unsafe(sql, params as never[]) as Promise<T[]>,
-    REMOTE_TIMEOUT_MS,
-    "remote write",
-  )) as T[];
+  const rows = await counted(
+    withTimeout(
+      getDb().unsafe(sql, params as never[]) as Promise<T[]>,
+      REMOTE_TIMEOUT_MS,
+      "remote write",
+    ) as Promise<T[]>,
+  );
+  return rows;
 }
 
 /** Cheap liveness probe used by the circuit breaker. */

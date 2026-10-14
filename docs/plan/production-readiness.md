@@ -239,7 +239,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test, build.
 
-## P2.0c Neon usage metrics  [ ]   model: sonnet   depends: P2.0b
+## P2.0c Neon usage metrics  [x]   model: sonnet   depends: P2.0b
 **Goal:** show Neon usage before it hits caps.
 
 **Files:** `src/db/remote.ts` (count queries and approximate response bytes per process, using an hourly bucket), `src/app/api/health/route.ts` (new; replaces `api/db-status` in P2.3), `tests/`.
