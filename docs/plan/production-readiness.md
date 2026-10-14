@@ -458,7 +458,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.2 UI primitives  [ ]   model: sonnet   depends: P5.1
+## P5.2 UI primitives  [x]   model: sonnet   depends: P5.1
 **Files:** `src/components/ui/{Button,IconButton,Badge,Card,Input,Field,PageHero,StatTile,EmptyState,ConfirmDialog,Toast}.tsx` (new), `tests/ui-primitives.test.tsx` (add `@testing-library/react` and `jsdom` as dev dependencies).
 
 **Acceptance:**
