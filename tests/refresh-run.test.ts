@@ -1,4 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { PGlite } from "@electric-sql/pglite";
+import { setRemoteHarness } from "@/db";
+import {
+  acquireRefreshLock,
+  beginTrackedRun,
+  finishTrackedRun,
+  releaseRefreshLock,
+} from "@/lib/refresh-run-store";
 import {
   beginRun,
   finishRun,
@@ -109,5 +119,62 @@ describe("refresh run tracker", () => {
     expect(run.boards).toEqual([]);
     finishRun();
     expect(isRunActive()).toBe(false);
+  });
+});
+
+describe("refresh single-flight lock", () => {
+  let db: PGlite;
+
+  beforeEach(async () => {
+    resetTracker();
+    (globalThis as { __jobradarRefreshLockToken?: string }).__jobradarRefreshLockToken = undefined;
+    db = new PGlite();
+    for (const file of readdirSync(join(process.cwd(), "db/migrations")).sort()) {
+      if (file.endsWith(".sql")) {
+        await db.exec(readFileSync(join(process.cwd(), "db/migrations", file), "utf8"));
+      }
+    }
+    setRemoteHarness({
+      query: async (sql, params) => (await db.query(sql, params)).rows as Record<string, unknown>[],
+      run: async (sql, params) => (await db.query(sql, params)).affectedRows ?? 0,
+    });
+  });
+
+  afterEach(() => setRemoteHarness(null));
+
+  it("concurrent acquires: exactly one wins", async () => {
+    const tokens = await Promise.all(Array.from({ length: 5 }, () => acquireRefreshLock()));
+    expect(tokens.filter((t) => t !== null)).toHaveLength(1);
+  });
+
+  it("release lets the next acquire", async () => {
+    const t = await acquireRefreshLock();
+    expect(t).not.toBeNull();
+    expect(await acquireRefreshLock()).toBeNull();
+    await releaseRefreshLock(t!);
+    expect(await acquireRefreshLock()).not.toBeNull();
+  });
+
+  it("an expired lock is taken over", async () => {
+    expect(await acquireRefreshLock(-1000)).not.toBeNull();
+    expect(await acquireRefreshLock()).not.toBeNull();
+  });
+
+  it("a non-owner cannot release", async () => {
+    const t = await acquireRefreshLock();
+    await releaseRefreshLock("not-the-owner");
+    expect(await acquireRefreshLock()).toBeNull();
+    await releaseRefreshLock(t!);
+    expect(await acquireRefreshLock()).not.toBeNull();
+  });
+
+  it("concurrent beginTrackedRun: one run; finish releases", async () => {
+    const results = await Promise.all([
+      beginTrackedRun("manual", BOARDS),
+      beginTrackedRun("scheduled", BOARDS),
+    ]);
+    expect(results.filter((r) => r !== null)).toHaveLength(1);
+    await finishTrackedRun();
+    expect(await beginTrackedRun("manual", BOARDS)).not.toBeNull();
   });
 });

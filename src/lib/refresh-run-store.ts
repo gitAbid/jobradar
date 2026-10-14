@@ -1,4 +1,4 @@
-import { qOne, run as exec } from "@/db";
+import { q, qOne, run as exec } from "@/db";
 import {
   beginRun,
   finishRun,
@@ -27,11 +27,49 @@ const RUN_KEY = "refresh_run";
  * function hit maxDuration mid-run) rather than blocking new runs. */
 const STALE_MS = 5 * 60 * 1000;
 
+const LOCK_KEY = "refresh_lock";
+/** Refresh routes cap at maxDuration = 60s; the lock outlives that by a margin
+ * so a crashed run's lock expires on its own but a live run never loses it. */
+const LOCK_TTL_MS = (60 + 30) * 1000;
+
 interface StoredRun extends RefreshRun {
   updatedAt?: string;
 }
 
-declare const globalThis: { __jobradarMirrorChain?: Promise<unknown> };
+declare const globalThis: {
+  __jobradarMirrorChain?: Promise<unknown>;
+  __jobradarRefreshLockToken?: string;
+};
+
+/**
+ * Atomically take the cross-instance refresh lock (one statement, so no
+ * read-then-write race). Session advisory locks don't survive the PgBouncer
+ * transaction pooler, hence a lock row with expiry. Returns the owner token,
+ * or null when another live run holds it.
+ */
+export async function acquireRefreshLock(ttlMs: number = LOCK_TTL_MS): Promise<string | null> {
+  const token = crypto.randomUUID();
+  const value = JSON.stringify({
+    token,
+    expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+  });
+  const rows = await q<{ key: string }>(
+    "insert into app_settings (key, value) values ($1, $2) " +
+      "on conflict (key) do update set value = excluded.value " +
+      "where (app_settings.value::jsonb->>'expiresAt')::timestamptz < now() " +
+      "returning key",
+    [LOCK_KEY, value],
+  );
+  return rows.length > 0 ? token : null;
+}
+
+/** Release the lock; only the owner's token matches. */
+export async function releaseRefreshLock(token: string): Promise<void> {
+  await exec(
+    "delete from app_settings where key = $1 and value::jsonb->>'token' = $2",
+    [LOCK_KEY, token],
+  );
+}
 
 function mirror(run: RefreshRun): Promise<unknown> {
   const stored: StoredRun = { ...run, updatedAt: new Date().toISOString() };
@@ -92,10 +130,21 @@ export async function beginTrackedRun(
   boards: ReadonlyArray<{ id: number; name: string }>,
 ): Promise<RefreshRun | null> {
   if (isRunActive()) return null;
-  const mirrored = await readMirrored();
-  if (mirrored !== null && mirrored.finishedAt === null) return null;
+  let token: string | null;
+  try {
+    token = await acquireRefreshLock();
+  } catch (err) {
+    console.error("[jobradar] refresh lock acquire failed:", err);
+    return null; // fail closed
+  }
+  if (token === null) return null;
   const run = beginRun(trigger, boards);
-  if (run !== null) mirror(run);
+  if (run === null) {
+    await releaseRefreshLock(token).catch(() => {});
+    return null;
+  }
+  globalThis.__jobradarRefreshLockToken = token;
+  mirror(run);
   return run;
 }
 
@@ -116,6 +165,13 @@ export async function completeTrackedBoard(
 
 export async function finishTrackedRun(): Promise<void> {
   finishRun();
+  const token = globalThis.__jobradarRefreshLockToken;
+  globalThis.__jobradarRefreshLockToken = undefined;
+  if (token !== undefined) {
+    await releaseRefreshLock(token).catch((err) => {
+      console.error("[jobradar] refresh lock release failed:", err);
+    });
+  }
   const run = getRun();
   if (run !== null) await mirror(run);
 }

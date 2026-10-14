@@ -295,7 +295,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test, build.
 
-## P2.5 Atomic refresh single-flight  [ ]   model: sonnet   depends: P2.4
+## P2.5 Atomic refresh single-flight  [x]   model: sonnet   depends: P2.4
 **Goal:** two instances can never run a refresh at the same time.
 
 **Files:** `src/lib/refresh-run-store.ts`, `src/lib/refresh.ts`, `tests/refresh-run.test.ts`.
