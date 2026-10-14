@@ -4,6 +4,7 @@ import { requirePageUser } from "@/lib/authz";
 import { listApiKeys } from "@/lib/api/keys";
 import { apiKeys } from "@/lib/api/keys-store";
 import { CreateKeyForm } from "@/components/api-keys/CreateKeyForm";
+import { EmptyState } from "@/components/ui";
 import { RevokeButton } from "@/components/api-keys/RevokeButton";
 
 export const metadata = { title: "API Keys · JobRadar" };
@@ -36,9 +37,10 @@ export default async function ApiKeysPage() {
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {keys.length === 0 ? (
-          <p className="px-5 py-10 text-center text-sm text-slate-500">
-            No API keys yet. Create one above to let another app consume your feed.
-          </p>
+          <EmptyState
+            title="No API keys yet"
+            description="Create one above to let another app consume your feed."
+          />
         ) : (
           <ul className="divide-y divide-slate-100">
             {keys.map((k) => (

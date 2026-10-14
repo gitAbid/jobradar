@@ -4,7 +4,8 @@ import Link from "next/link";
 import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
 import { toggleFollowCompanyAction } from "@/app/actions";
 import { ListingCard } from "@/components/ListingCard";
-import { ArrowUpRight, Building2, Heart, Star, X } from "lucide-react";
+import { EmptyState } from "@/components/ui";
+import { ArrowUpRight, Building2, Star, X } from "lucide-react";
 import type { FilterableListing } from "@/lib/types";
 
 const FOLLOWING_LIMIT = 200;
@@ -160,31 +161,26 @@ export default async function FollowingPage({
       )}
 
       {followed.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center shadow-sm sm:px-10">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
-            <Heart className="h-6 w-6" />
-          </div>
-          <h2 className="mt-4 text-base font-bold text-slate-900">Build your company shortlist</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            Tap the star next to any company on a job card and its current openings will appear here.
-          </p>
-          <Link href="/" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800">
-            Explore the dashboard <ArrowUpRight className="h-4 w-4" />
-          </Link>
-        </div>
+        <EmptyState
+          title="Build your company shortlist"
+          description="Tap the star next to any company on a job card and its current openings will appear here."
+          action={
+            <Link href="/" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
+              Explore the dashboard <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          }
+        />
       ) : listings.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center shadow-sm sm:px-10">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-            <Building2 className="h-6 w-6" />
-          </div>
-          <h2 className="mt-4 text-base font-bold text-slate-900">No current openings</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            No current openings from <strong>{activeCompany}</strong>.
-          </p>
-          <p className="mt-3 text-sm text-slate-500">
-            <Link href="/following" className="font-semibold text-teal-700 underline">View all followed companies</Link> or check the <Link href="/" className="font-semibold text-teal-700 underline">Dashboard</Link> after a refresh.
-          </p>
-        </div>
+        <EmptyState
+          variant="filtered"
+          title="No current openings"
+          description={<>No current openings from <strong>{activeCompany}</strong>.</>}
+          clearFilters={
+            <Link href="/following" className="inline-flex min-h-11 items-center rounded-lg border border-border-strong bg-surface-raised px-4 text-sm font-semibold text-foreground hover:bg-surface">
+              View all followed companies
+            </Link>
+          }
+        />
       ) : (
         <div className="flex flex-col gap-3">
           {activeCompany && (

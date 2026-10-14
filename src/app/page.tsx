@@ -7,6 +7,8 @@ import { ListingCard } from "@/components/ListingCard";
 import { RefreshButton } from "@/components/RefreshButton";
 import { FacetSidebar } from "@/components/FacetSidebar";
 import { Pagination } from "@/components/Pagination";
+import { EmptyState } from "@/components/ui";
+import { hasActiveFilters } from "@/lib/empty-state";
 import { connection } from "next/server";
 import { ArrowUpRight, BriefcaseBusiness, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -105,21 +107,31 @@ export default async function DashboardPage({
           <FilterBar />
 
           {view.entries.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm sm:px-10">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-50 text-teal-600">
-                <BriefcaseBusiness className="h-6 w-6" />
-              </div>
-              <h2 className="mt-4 text-base font-bold text-slate-900">No matches just yet</h2>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                Refresh your boards for the latest openings, or add a new source if you want to widen the radar.
-              </p>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                <RefreshButton />
-                <Link href="/boards" className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 hover:border-teal-300 hover:text-teal-800">
-                  Add a board
-                </Link>
-              </div>
-            </div>
+            hasActiveFilters(sp) ? (
+              <EmptyState
+                variant="filtered"
+                title="No openings match these filters"
+                description="Your filters are narrower than the data. Loosen or clear them to see more."
+                clearFilters={
+                  <Link href="/" className="inline-flex min-h-11 items-center rounded-lg border border-border-strong bg-surface-raised px-4 text-sm font-semibold text-foreground hover:bg-surface">
+                    Clear filters
+                  </Link>
+                }
+              />
+            ) : (
+              <EmptyState
+                title="No matches just yet"
+                description="Refresh your boards for the latest openings, or add a new source if you want to widen the radar."
+                action={
+                  <>
+                    <RefreshButton />
+                    <Link href="/boards" className="inline-flex min-h-11 items-center rounded-lg border border-border-strong bg-surface-raised px-4 text-sm font-semibold text-foreground hover:bg-surface">
+                      Add a board
+                    </Link>
+                  </>
+                }
+              />
+            )
           ) : (
             <>
               <div className="flex flex-col gap-3">

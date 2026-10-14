@@ -485,7 +485,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.4 Error, loading, not-found  [ ]   model: sonnet   depends: P5.2, P2.3
+## P5.4 Error, loading, not-found  [x]   model: sonnet   depends: P5.2, P2.3
 **Files:** `src/app/error.tsx`, `src/app/global-error.tsx`, `src/app/not-found.tsx`, and `loading.tsx` for `/`, `/boards` and the saved/settings routes. Update the existing `applied/loading.tsx` and `following/loading.tsx` to match the real layouts.
 
 **Acceptance:**
