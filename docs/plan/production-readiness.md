@@ -383,7 +383,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test.
 
-## P3.7 Authorization test suite  [ ]   model: sonnet   depends: P3.5, P3.6
+## P3.7 Authorization test suite  [x]   model: sonnet   depends: P3.5, P3.6
 **Files:** `tests/authz.test.ts`.
 
 **Acceptance:**
