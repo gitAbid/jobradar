@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { revokeApiKeyAction } from "@/app/api-keys/actions";
+import { revokeApiKeyAction } from "@/app/settings/api-keys/actions";
 import { ConfirmDialog, useToast } from "@/components/ui";
 
 export function RevokeButton({ id, revoked }: { id: number; revoked: boolean }) {

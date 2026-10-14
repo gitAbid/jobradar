@@ -21,7 +21,7 @@ export function ListingStatusButtons({ id, status }: { id: number; status: Listi
       </StatusButton>
       {current === "favorite" || current === "applied" ? (
         <Link
-          href="/applied"
+          href="/saved"
           className="ml-auto inline-flex min-h-10 items-center rounded-lg px-2 text-xs font-semibold text-slate-400 transition-colors hover:bg-slate-50 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
           Manage saved jobs <span aria-hidden="true" className="ml-1">→</span>

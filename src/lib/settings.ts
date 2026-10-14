@@ -64,3 +64,8 @@ export async function setGlobalKeywords(userId: string, keywords: string[]): Pro
 export async function isSoundEnabled(userId: string): Promise<boolean> {
   return (await getUserSetting(userId, "sound_enabled")) !== "false";
 }
+
+export async function getTheme(userId: string): Promise<"system" | "light" | "dark"> {
+  const v = await getUserSetting(userId, "theme");
+  return v === "light" || v === "dark" ? v : "system";
+}

@@ -1,5 +1,5 @@
 import { q, rowToBoard } from "@/db";
-import { getGlobalKeywords, getRefreshIntervalHours, isSoundEnabled } from "@/lib/settings";
+import { getRefreshIntervalHours } from "@/lib/settings";
 import { AddBoardForm } from "./AddBoardForm";
 import { DeleteBoardButton, KeywordsForm, ToggleEnabledForm } from "./BoardControls";
 import { SettingsForm } from "./SettingsForm";
@@ -10,14 +10,12 @@ import { requirePageAdmin } from "@/lib/authz";
 
 export default async function BoardsPage() {
   await connection(); // request-time rendering
-  const user = await requirePageAdmin();
-  const [boards, intervalHours, keywords, sound] = await Promise.all([
+  await requirePageAdmin(); // enforced server-side; the nav link is only a convenience
+  const [boards, intervalHours] = await Promise.all([
     q<Record<string, unknown>>("select * from boards order by name").then((rows) =>
       rows.map((r) => rowToBoard(r as never)),
     ),
     getRefreshIntervalHours(),
-    getGlobalKeywords(user.id),
-    isSoundEnabled(user.id),
   ]);
   const activeBoards = boards.filter((board) => board.enabled).length;
   const healthyBoards = boards.filter((board) => board.lastStatus?.startsWith("ok")).length;
@@ -60,7 +58,7 @@ export default async function BoardsPage() {
         </div>
       </section>
 
-      <SettingsForm intervalHours={intervalHours} keywords={keywords} sound={sound} />
+      <SettingsForm intervalHours={intervalHours} />
     </div>
   );
 }

@@ -23,9 +23,11 @@ describe("isPublicPath", () => {
     ["/logo.png", true],
     ["/", false],
     ["/following", false],
-    ["/api-keys", false],
+    ["/settings", false],
+    ["/saved", false],
+    ["/admin/boards", false],
     ["/signinx", false],
-    ["/boards/1", false],
+    ["/admin/boards/1", false],
   ])("%s -> %s", (p, expected) => {
     expect(isPublicPath(p)).toBe(expected);
   });

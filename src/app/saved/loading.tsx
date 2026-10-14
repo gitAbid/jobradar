@@ -1,6 +1,6 @@
 import { HeroSkeleton, Skeleton } from "@/components/Skeleton";
 
-/** Prefetchable fallback for /applied — two pipeline columns of cards. */
+/** Prefetchable fallback for /saved — two pipeline columns of cards. */
 export default function Loading() {
   return (
     <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading pipeline">

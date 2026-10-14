@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createApiKeyAction, type CreateKeyState } from "@/app/api-keys/actions";
+import { createApiKeyAction, type CreateKeyState } from "@/app/settings/api-keys/actions";
 import { CopyButton } from "@/components/CopyButton";
 
 const INITIAL: CreateKeyState = {};

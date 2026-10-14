@@ -42,7 +42,7 @@ vi.mock("@/lib/refresh-run-store", () => ({ readCurrentRun: () => readCurrentRun
 
 import { setRemoteHarness } from "@/db";
 import * as publicActions from "@/app/actions";
-import * as keyActions from "@/app/api-keys/actions";
+import * as keyActions from "@/app/settings/api-keys/actions";
 import { requirePageAdmin, requirePageUser } from "@/lib/authz";
 import { POST as refreshPOST } from "@/app/api/refresh/route";
 import { GET as statusGET } from "@/app/api/refresh/status/route";
@@ -147,6 +147,7 @@ const ACTIONS: Record<string, ActionCase> = {
     admin: false,
     call: () => publicActions.saveSettingsAction(form({ global_keywords: "x,y", sound_enabled: "off", interval_hours: "9" })),
   },
+  saveThemeAction: { admin: false, call: () => publicActions.saveThemeAction(form({ theme: "dark" })) },
   createApiKeyAction: { admin: false, call: () => keyActions.createApiKeyAction({}, form({ name: "mine" })) },
   revokeApiKeyAction: { admin: false, call: () => keyActions.revokeApiKeyAction(form({ id: "1" })) },
 };

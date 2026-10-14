@@ -510,7 +510,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.6 Information architecture  [ ]   model: sonnet   depends: P5.5
+## P5.6 Information architecture  [x]   model: sonnet   depends: P5.5
 **Files:** `src/components/AppHeader.tsx`, `src/app/layout.tsx`, `src/app/bangladesh/page.tsx` (becomes a redirect), `src/app/applied/` → `src/app/saved/` (with a redirect left at `/applied`), `src/app/settings/page.tsx` (new), `src/app/api-keys/` (moved under settings, with a redirect), `src/app/boards/` → `src/app/admin/boards/` (admin-only, with a redirect), `src/lib/bd.ts` (becomes a location preset), `src/components/ListingCard.tsx` (skill chips keep the current route).
 
 **Acceptance:**

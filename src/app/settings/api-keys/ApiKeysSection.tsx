@@ -1,28 +1,20 @@
-import { connection } from "next/server";
 import { KeyRound } from "lucide-react";
-import { requirePageUser } from "@/lib/authz";
 import { listApiKeys } from "@/lib/api/keys";
 import { apiKeys } from "@/lib/api/keys-store";
 import { CreateKeyForm } from "@/components/api-keys/CreateKeyForm";
 import { EmptyState } from "@/components/ui";
 import { RevokeButton } from "@/components/api-keys/RevokeButton";
 
-export const metadata = { title: "API Keys · JobRadar" };
-
-export default async function ApiKeysPage() {
-  await connection(); // DB reads must not be prerendered
-  const user = await requirePageUser();
-  const keys = await listApiKeys(apiKeys(), user.id);
+/** API keys section of /settings (the caller has already resolved the user). */
+export async function ApiKeysSection({ userId }: { userId: string }) {
+  const keys = await listApiKeys(apiKeys(), userId);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <section id="api-keys" className="flex scroll-mt-24 flex-col gap-4">
       <header>
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-700">
-          Developer
-        </p>
-        <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950">
+        <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-950">
           <KeyRound className="h-5 w-5 text-teal-600" /> API keys
-        </h1>
+        </h2>
         <p className="mt-2 text-sm leading-6 text-slate-500">
           Let other apps read your job list from{" "}
           <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">/api/v1/jobs</code> with{" "}
@@ -63,6 +55,6 @@ export default async function ApiKeysPage() {
           </ul>
         )}
       </section>
-    </div>
+    </section>
   );
 }

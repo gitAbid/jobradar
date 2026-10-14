@@ -5,6 +5,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { qOne, rowToBoard, run } from "@/db";
 import { setGlobalKeywords, setSetting, setUserSetting } from "@/lib/settings";
 import { refreshBoard } from "@/lib/refresh";
+import { THEMES } from "@/lib/theme";
 import { AuthError, requireAdmin, requireUser, type SessionUser } from "@/lib/authz";
 
 // ── Validation ─────────────────────────────────────────────────────────────
@@ -43,11 +44,11 @@ const fail = (error: string, fieldErrors?: Record<string, string>): ActionResult
 });
 
 /** Every route that renders listings or board data. */
-const LISTING_ROUTES = ["/", "/applied", "/following", "/bangladesh"] as const;
+const LISTING_ROUTES = ["/", "/saved", "/following"] as const;
 
 function revalidateAll() {
   for (const p of LISTING_ROUTES) revalidatePath(p);
-  revalidatePath("/boards");
+  revalidatePath("/admin/boards");
   // listings, boards and status all feed the shared cache
   updateTag("listings");
 }
@@ -300,18 +301,35 @@ export async function togglePinCountryAction(formData: FormData): Promise<Action
 
 // ── Settings ───────────────────────────────────────────────────────────────
 
-/** Keywords + sound are per user; the refresh interval is system-wide (admin only). */
+/**
+ * Keywords + sound are per user (written only when the preferences form
+ * submitted them); the refresh interval is system-wide (admin only).
+ */
 export async function saveSettingsAction(formData: FormData): Promise<ActionResult> {
   const g = await gate();
   if (!g.ok) return denied(g);
-  await setGlobalKeywords(g.user.id, parseKeywords(formData.get("global_keywords")));
-  await setUserSetting(g.user.id, "sound_enabled", formData.get("sound_enabled") === "on" ? "true" : "false");
+  if (formData.has("global_keywords")) {
+    await setGlobalKeywords(g.user.id, parseKeywords(formData.get("global_keywords")));
+    await setUserSetting(g.user.id, "sound_enabled", formData.get("sound_enabled") === "on" ? "true" : "false");
+  }
 
   const hours = Number(formData.get("interval_hours"));
   if (g.user.role === "admin" && Number.isFinite(hours) && hours >= 1) {
     await setSetting("refresh_interval_hours", String(Math.floor(hours)));
   }
   commitUserState(g.user.id);
-  revalidatePath("/boards");
+  revalidatePath("/settings");
+  revalidatePath("/admin/boards");
+  return OK;
+}
+
+/** Per-user colour theme: "system" follows the OS, otherwise forced light/dark. */
+export async function saveThemeAction(formData: FormData): Promise<ActionResult> {
+  const g = await gate();
+  if (!g.ok) return denied(g);
+  const theme = z.enum(THEMES).safeParse(formData.get("theme"));
+  if (!theme.success) return fail("Pick system, light or dark.");
+  await setUserSetting(g.user.id, "theme", theme.data);
+  revalidatePath("/settings");
   return OK;
 }

@@ -3,11 +3,13 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { listPinnedCountries } from "@/db";
-import { isSoundEnabled } from "@/lib/settings";
+import { getTheme, isSoundEnabled } from "@/lib/settings";
 import { getSessionUser } from "@/lib/authz";
 import { PinnedCountryChip } from "@/components/PinnedCountryChip";
 import { ToastProvider } from "@/components/ui";
 import { AppHeader } from "@/components/AppHeader";
+import { ThemeSync } from "@/components/ThemeSync";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import { UserMenu } from "@/components/UserMenu";
 import { RefreshStatusBar } from "@/components/RefreshStatusBar";
 import "./globals.css";
@@ -20,25 +22,23 @@ export const metadata: Metadata = {
   description: "Gather, filter, save, and track the job openings that fit your next move.",
 };
 
-/** Pinned countries shown in the nav; streams in without blocking layout render. */
-async function PinnedCountriesNav() {
+/** Header with role-aware nav, user menu and pinned locations; streams in under a static fallback. */
+async function Header() {
   await connection(); // request-time read
   const user = await getSessionUser();
-  if (!user) return null; // signed out: no pins
-  const pinned = await listPinnedCountries(user.id);
-  if (pinned.length === 0) return null;
-
+  const pinned = user ? await listPinnedCountries(user.id) : [];
   return (
-    <div className="border-t border-slate-200/80 bg-white/70">
-      <div className="mx-auto flex min-h-10 max-w-7xl items-center gap-3 overflow-x-auto px-4 py-1.5 sm:px-6">
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-          Pinned locations
-        </span>
-        {pinned.map((country) => (
+    <>
+      <AppHeader
+        isAdmin={user?.role === "admin"}
+        userMenu={<UserMenu />}
+        hasPinned={pinned.length > 0}
+        pinned={pinned.map((country) => (
           <PinnedCountryChip key={country} country={country} />
         ))}
-      </div>
-    </div>
+      />
+      {user && <ThemeSync theme={await getTheme(user.id)} />}
+    </>
   );
 }
 
@@ -53,19 +53,17 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* applies the saved theme before first paint (no flash) */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-sand text-slate-950 antialiased">
         <ToastProvider>
         <a className="skip-link" href="#main-content">Skip to content</a>
         <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/90 backdrop-blur-xl">
-          <AppHeader />
-          <div className="mx-auto flex max-w-7xl justify-end px-4 pb-1 sm:px-6">
-            <Suspense fallback={null}>
-              <UserMenu />
-            </Suspense>
-          </div>
-          <Suspense fallback={null}>
-            <PinnedCountriesNav />
+          <Suspense fallback={<AppHeader />}>
+            <Header />
           </Suspense>
           <Suspense fallback={null}>
             <RefreshStatus />

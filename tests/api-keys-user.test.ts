@@ -9,7 +9,7 @@ vi.mock("react", async (orig) => ({ ...(await orig<typeof import("react")>()), c
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn(), cacheTag: vi.fn(), cacheLife: vi.fn() }));
 
 import { setRemoteHarness } from "@/db";
-import { createApiKeyAction, revokeApiKeyAction } from "@/app/api-keys/actions";
+import { createApiKeyAction, revokeApiKeyAction } from "@/app/settings/api-keys/actions";
 import { hashKey, listApiKeys } from "@/lib/api/keys";
 import { apiKeys } from "@/lib/api/keys-store";
 import { jobsListResponse, loadFeedSafe } from "@/lib/api/jobs";

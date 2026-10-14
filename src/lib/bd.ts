@@ -70,3 +70,22 @@ export function isBangladeshRelevant(listing: {
   const hay = `${listing.title} ${listing.searchText ?? ""}`;
   return /\bbangladesh/i.test(hay);
 }
+
+/**
+ * Location preset: /bangladesh is now just the main feed filtered to the
+ * "Bangladesh" country facet (see facets.ts COUNTRY_FACETS). The relevance
+ * helpers above remain for the API / SQL prefilter.
+ */
+export const BD_PRESET = { country: "Bangladesh" } as const;
+
+/** Feed URL for the Bangladesh preset, keeping any other query params. */
+export function bdPresetUrl(sp: Record<string, string | string[] | undefined> = {}): string {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v === undefined) continue;
+    for (const item of Array.isArray(v) ? v : [v]) params.append(k, item);
+  }
+  const has = params.getAll("country").some((c) => c.toLowerCase() === BD_PRESET.country.toLowerCase());
+  if (!has) params.append("country", BD_PRESET.country);
+  return `/?${params.toString()}`;
+}

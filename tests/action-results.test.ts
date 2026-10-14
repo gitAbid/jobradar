@@ -17,7 +17,7 @@ vi.mock("@/lib/refresh", () => ({ refreshBoard: vi.fn(async () => ({ ok: true, f
 
 import { setRemoteHarness } from "@/db";
 import * as actions from "@/app/actions";
-import { revokeApiKeyAction } from "@/app/api-keys/actions";
+import { revokeApiKeyAction } from "@/app/settings/api-keys/actions";
 
 const A = "00000000-0000-4000-8000-00000000000a";
 const B = "00000000-0000-4000-8000-00000000000b";
@@ -103,13 +103,14 @@ describe("action result shape", () => {
     expect(await revokeApiKeyAction(form({ id: "1" }))).toEqual({ ok: true });
   });
 
-  it("user-state commits revalidate /bangladesh too", async () => {
+  it("user-state commits revalidate the listing routes (and board commits the admin page)", async () => {
     authMock.mockResolvedValue(session(B, "user"));
     await actions.setListingStatusAction(form({ id: "1", status: "hidden" }));
-    expect(revalidatePath).toHaveBeenCalledWith("/bangladesh");
+    expect(revalidatePath).toHaveBeenCalledWith("/saved");
+    expect(revalidatePath).not.toHaveBeenCalledWith("/bangladesh");
     revalidatePath.mockReset();
     authMock.mockResolvedValue(session(A, "admin"));
     await actions.toggleBoardEnabledAction(form({ id: "1" }));
-    expect(revalidatePath).toHaveBeenCalledWith("/bangladesh");
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/boards");
   });
 });

@@ -31,7 +31,7 @@ export async function createApiKeyAction(
 
   try {
     const { key, plaintext } = await createApiKey(apiKeys(), name, user.id);
-    revalidatePath("/api-keys");
+    revalidatePath("/settings");
     return { name, plaintext, prefix: key.prefix };
   } catch (err) {
     console.error("[jobradar] create API key failed:", err);
@@ -64,6 +64,6 @@ export async function revokeApiKeyAction(formData: FormData): Promise<RevokeKeyR
     console.error("[jobradar] revoke API key failed:", err);
     return { ok: false, error: "Couldn’t revoke the key — try again shortly." };
   }
-  revalidatePath("/api-keys");
+  revalidatePath("/settings");
   return { ok: true };
 }

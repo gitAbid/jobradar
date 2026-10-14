@@ -35,6 +35,7 @@ export default async function DashboardPage({
   // one page of rows + aggregated facet counts, computed in SQL
   const view = await loadJobView(user.id, sp, globalKeywords, { facetLimit: FACET_LIMIT });
   const followedCompanies = new Set((await listFollowedCompanies(user.id)).map((n) => n.toLowerCase()));
+  const isAdmin = user.role === "admin";
   const pinnedCountries = (await listPinnedCountries(user.id)).map((n) => n.toLowerCase());
 
   return (
@@ -56,7 +57,7 @@ export default async function DashboardPage({
                 Scan the newest matches, save the promising ones, and keep moving.
               </p>
             </div>
-            <RefreshButton />
+            {isAdmin && <RefreshButton />}
           </div>
 
           <div className="flex flex-wrap gap-2.5">
@@ -69,14 +70,14 @@ export default async function DashboardPage({
               <p className="mt-1 text-2xl font-bold tracking-tight text-white">{view.totalVisible}</p>
             </div>
             <Link
-              href="/boards"
+              href={isAdmin ? "/admin/boards" : "/settings"}
               className="group inline-flex min-h-[4.5rem] flex-1 items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 sm:max-w-xs"
             >
               <span className="flex items-center gap-2.5">
                 <BriefcaseBusiness className="h-4 w-4 text-coral-300" />
                 <span>
-                  <span className="block font-semibold text-white">Manage your boards</span>
-                  <span className="mt-0.5 block text-xs text-slate-400">Tune sources and keywords</span>
+                  <span className="block font-semibold text-white">{isAdmin ? "Manage your boards" : "Tune your keywords"}</span>
+                  <span className="mt-0.5 block text-xs text-slate-400">{isAdmin ? "Tune sources and keywords" : "Sharpen what the feed ranks"}</span>
                 </span>
               </span>
               <ArrowUpRight className="h-4 w-4 text-slate-500 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
@@ -103,7 +104,7 @@ export default async function DashboardPage({
 
           <FilterBar />
 
-          <JobFeed view={view} searchParams={sp} followedCompanies={followedCompanies} />
+          <JobFeed view={view} searchParams={sp} followedCompanies={followedCompanies} isAdmin={isAdmin} />
         </div>
       </div>
     </div>

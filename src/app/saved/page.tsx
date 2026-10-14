@@ -14,7 +14,7 @@ const COLUMNS: Array<{ status: ListingStatus; title: string; icon: React.ReactNo
 /** Max cards rendered per column — keeps the page hydrating in milliseconds. */
 const COLUMN_LIMIT = 50;
 
-export default async function AppliedPage() {
+export default async function SavedPage() {
   await connection(); // request-time rendering
   const user = await requirePageUser();
 
@@ -59,7 +59,7 @@ export default async function AppliedPage() {
             <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-violet-800">
               <Heart className="h-3.5 w-3.5 fill-current" /> Application workspace
             </div>
-            <h1 className="mt-4 text-3xl font-bold tracking-[-0.04em] text-slate-950 sm:text-4xl">Your pipeline</h1>
+            <h1 className="mt-4 text-3xl font-bold tracking-[-0.04em] text-slate-950 sm:text-4xl">Saved jobs</h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-[15px]">
               Keep promising roles close, move applications forward, and clear out the ones that are no longer a fit.
             </p>

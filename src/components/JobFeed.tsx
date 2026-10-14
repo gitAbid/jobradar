@@ -14,10 +14,13 @@ export function JobFeed({
   view,
   searchParams,
   followedCompanies,
+  isAdmin = false,
 }: {
   view: JobView;
   searchParams: Parameters<typeof hasActiveFilters>[0];
   followedCompanies: Set<string>;
+  /** only admins can refresh or add boards */
+  isAdmin?: boolean;
 }) {
   if (view.entries.length === 0) {
     return hasActiveFilters(searchParams) ? (
@@ -31,18 +34,23 @@ export function JobFeed({
           </Link>
         }
       />
-    ) : (
+    ) : isAdmin ? (
       <EmptyState
         title="No matches just yet"
         description="Refresh your boards for the latest openings, or add a new source if you want to widen the radar."
         action={
           <>
             <RefreshButton />
-            <Link href="/boards" className={secondaryLink}>
+            <Link href="/admin/boards" className={secondaryLink}>
               Add a board
             </Link>
           </>
         }
+      />
+    ) : (
+      <EmptyState
+        title="No matches just yet"
+        description="New openings are gathered regularly. Check back soon."
       />
     );
   }

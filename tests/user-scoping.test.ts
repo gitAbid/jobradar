@@ -21,7 +21,7 @@ import {
   toggleFollowCompanyAction,
   togglePinCountryAction,
 } from "@/app/actions";
-import { createApiKeyAction } from "@/app/api-keys/actions";
+import { createApiKeyAction } from "@/app/settings/api-keys/actions";
 import { runJobQuery, type SqlExec } from "@/lib/job-query";
 import { getGlobalKeywords, getRefreshIntervalHours, isSoundEnabled } from "@/lib/settings";
 
