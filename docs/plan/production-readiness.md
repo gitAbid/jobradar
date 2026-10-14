@@ -152,7 +152,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **USER ACTION before P2.2 runs against real data:** create a Neon branch named `staging` and provide its URL as `STAGING_DATABASE_URL` in `.env.local`.
 
-## P2.1 Migration runner research  [ ]   model: haiku   depends: P1.*
+## P2.1 Migration runner research  [x]   model: haiku   depends: P1.*
 **Question:** what is the simplest robust migration approach for raw SQL with postgres.js on Neon and Vercel?
 
 **Leaning:** `db/migrations/NNN_name.sql`, plus a ~60-line `scripts/migrate.ts` that keeps a `schema_migrations` table, runs each file in a transaction, and takes an advisory lock. It is run by `pnpm db:migrate` before `next build` in Vercel's build command.
