@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { listPinnedCountries } from "@/db";
 import { isSoundEnabled } from "@/lib/settings";
+import { getSessionUser } from "@/lib/authz";
 import { togglePinCountryAction } from "@/app/actions";
 import { AppHeader } from "@/components/AppHeader";
 import { UserMenu } from "@/components/UserMenu";
@@ -23,7 +24,9 @@ export const metadata: Metadata = {
 /** Pinned countries shown in the nav; streams in without blocking layout render. */
 async function PinnedCountriesNav() {
   await connection(); // request-time read
-  const pinned = await listPinnedCountries();
+  const user = await getSessionUser();
+  if (!user) return null; // signed out: no pins
+  const pinned = await listPinnedCountries(user.id);
   if (pinned.length === 0) return null;
 
   return (
@@ -66,7 +69,8 @@ async function PinnedCountriesNav() {
 /** Refresh progress bar; streams in without blocking layout render. */
 async function RefreshStatus() {
   await connection(); // request-time read (sound setting)
-  return <RefreshStatusBar soundEnabled={await isSoundEnabled()} />;
+  const user = await getSessionUser();
+  return <RefreshStatusBar soundEnabled={user ? await isSoundEnabled(user.id) : true} />;
 }
 
 export default function RootLayout({

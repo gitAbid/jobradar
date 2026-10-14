@@ -6,7 +6,7 @@ import { setRemoteHarness } from "../src/db";
 import { claimLegacyState } from "../src/lib/legacy-claim";
 
 const mig = (f: string) => readFileSync(join(process.cwd(), "db/migrations", f), "utf8");
-const FILES = ["001_baseline.sql", "002_feed_index.sql", "003_country.sql", "004_types.sql", "005_users.sql"];
+const FILES = ["001_baseline.sql", "002_feed_index.sql", "003_country.sql", "004_types.sql", "005_users.sql", "006_drop_global_state.sql"];
 
 let db: PGlite;
 afterEach(async () => {
@@ -28,6 +28,7 @@ async function setup() {
     insert into api_keys (name, key_hash, prefix, created_at) values ('k','h','p','2026-09-01T00:00:00Z');
   `);
   await db.exec(mig(FILES[4]));
+  await db.exec(mig(FILES[5]));
   setRemoteHarness({
     query: async (sql, params) => (await db.query(sql, params)).rows as Record<string, unknown>[],
     run: async (sql, params) => (await db.query(sql, params)).affectedRows ?? 0,
@@ -38,12 +39,16 @@ async function setup() {
 }
 
 describe("005_users migration + claimLegacyState", { timeout: 30000 }, () => {
-  it("applies on seeded legacy rows and keeps listings.status/user_tags", async () => {
+  it("applies on seeded legacy rows; 006 preserves legacy state and drops the global columns", async () => {
     await setup();
     const cols = await db.query<{ column_name: string }>(
       "select column_name from information_schema.columns where table_name='listings' and column_name in ('status','user_tags')",
     );
-    expect(cols.rows).toHaveLength(2);
+    expect(cols.rows).toHaveLength(0);
+    expect((await db.query("select listing_id, status, user_tags from legacy_listing_state order by listing_id")).rows).toEqual([
+      { listing_id: 1, status: "favorite", user_tags: [] },
+      { listing_id: 2, status: "new", user_tags: ["mine"] },
+    ]);
     const rls = await db.query<{ relname: string; relrowsecurity: boolean }>(
       "select relname, relrowsecurity from pg_class where relname in ('users','accounts','user_listing_state','user_settings')",
     );
@@ -54,7 +59,12 @@ describe("005_users migration + claimLegacyState", { timeout: 30000 }, () => {
 
   it("claims legacy state once, then is a no-op", async () => {
     const { admin, other } = await setup();
+    await db.exec("insert into app_settings (key, value) values ('global_keywords', '[\"go\"]'), ('sound_enabled', 'false')");
     expect(await claimLegacyState(admin)).toBe(true);
+    expect((await db.query("select key, value from user_settings where user_id=$1 order by key", [admin])).rows).toEqual([
+      { key: "global_keywords", value: '["go"]' },
+      { key: "sound_enabled", value: "false" },
+    ]);
     const st = await db.query("select listing_id, status, user_tags from user_listing_state where user_id=$1 order by listing_id", [admin]);
     expect(st.rows).toEqual([
       { listing_id: 1, status: "favorite", user_tags: [] },
@@ -91,5 +101,14 @@ describe("005_users migration + claimLegacyState", { timeout: 30000 }, () => {
     await db.query("delete from users where id=$1", [admin]);
     for (const t of ["user_listing_state", "accounts", "user_settings", "followed_companies", "pinned_countries", "api_keys"])
       expect((await db.query(`select count(*)::int as n from ${t}`)).rows[0]).toEqual({ n: 0 });
+  });
+});
+
+describe("006_drop_global_state + claimLegacyState", { timeout: 30000 }, () => {
+  it("skips legacy rows whose listing was deleted before the claim", async () => {
+    const { admin } = await setup();
+    await db.exec("delete from listings where id = 1");
+    expect(await claimLegacyState(admin)).toBe(true);
+    expect((await db.query("select listing_id from user_listing_state")).rows).toEqual([{ listing_id: 2 }]);
   });
 });

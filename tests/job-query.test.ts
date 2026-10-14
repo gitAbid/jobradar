@@ -18,6 +18,8 @@ import type { FilterableListing } from "@/lib/types";
 
 let db: PGlite;
 let exec: SqlExec;
+const USER_A = "00000000-0000-4000-8000-00000000000a";
+const USER_B = "00000000-0000-4000-8000-00000000000b";
 let pool: FilterableListing[]; // oracle input, in feed order
 
 const BOARDS = [
@@ -89,9 +91,13 @@ function toListing(f: Fx): FilterableListing {
 
 beforeAll(async () => {
   db = new PGlite();
-  for (const file of ["001_baseline.sql", "002_feed_index.sql", "003_country.sql", "004_types.sql"]) {
+  for (const file of ["001_baseline.sql", "002_feed_index.sql", "003_country.sql", "004_types.sql", "005_users.sql", "006_drop_global_state.sql"]) {
     await db.exec(readFileSync(join(process.cwd(), "db/migrations", file), "utf8"));
   }
+  await db.query(
+    "insert into users (id, email) values ($1, 'a@x.io'), ($2, 'b@x.io')",
+    [USER_A, USER_B],
+  );
   for (const b of BOARDS) {
     await db.query(
       "insert into boards (id, name, type, url, filter_keywords) overriding system value values ($1,$2,'api','http://x',$3)",
@@ -102,12 +108,19 @@ beforeAll(async () => {
     const l = toListing(f);
     await db.query(
       `insert into listings (id, board_id, external_id, title, company, location, is_remote, visa_sponsorship,
-         remote_scope, tags, skills, posted_at, fetched_at, status, search_text, description)
-       overriding system value values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+         remote_scope, tags, skills, posted_at, fetched_at, search_text, description)
+       overriding system value values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [l.id, l.boardId, l.externalId, l.title, l.company, l.location, l.isRemote,
         l.visaSponsorship, l.remoteScope, JSON.stringify(l.tags), JSON.stringify(l.skills),
-        l.postedAt, l.fetchedAt, l.status, l.searchText, l.description],
+        l.postedAt, l.fetchedAt, l.searchText, l.description],
     );
+    // the fixture statuses are USER_A's state
+    if (l.status !== "new") {
+      await db.query(
+        "insert into user_listing_state (user_id, listing_id, status) values ($1, $2, $3)",
+        [USER_A, l.id, l.status],
+      );
+    }
   }
   exec = async (text, values) => (await db.query(text, values)).rows as Record<string, unknown>[];
   pool = FIXTURES.map(toListing).sort((a, b) => {
@@ -132,7 +145,7 @@ async function expectParity(
   const pageSize = opts.pageSize ?? 3;
   const src = opts.bd ? pool.filter(isBangladeshRelevant) : pool;
   const oracle = buildJobView(src, sp, keywords, { pageSize });
-  const got = await runJobQuery(exec, sp, keywords, { pageSize, bd: opts.bd });
+  const got = await runJobQuery(exec, sp, keywords, { pageSize, bd: opts.bd }, USER_A);
   expect(got.entries.map((e) => e.listing.id)).toEqual(oracle.entries.map((e) => e.listing.id));
   expect(got.entries.map((e) => e.matched)).toEqual(oracle.entries.map((e) => e.matched));
   expect(got.entries.map((e) => e.listing.description)).toEqual(oracle.entries.map((e) => e.listing.description));
@@ -262,7 +275,7 @@ describe("SQL feed parity with buildJobView", () => {
     expect(got.totalPages).toBe(1);
   });
   it("facetLimit caps lists but keeps selected values", async () => {
-    const got = await runJobQuery(exec, { showAll: "1", skill: "Go" }, KW, { pageSize: 3, facetLimit: 1 });
+    const got = await runJobQuery(exec, { showAll: "1", skill: "Go" }, KW, { pageSize: 3, facetLimit: 1 }, USER_A);
     const skills = got.facets.find((f) => f.param === "skill")!.values;
     expect(skills.map((v) => v.name)).toContain("Go");
     expect(skills.length).toBeLessThanOrEqual(2);
@@ -276,6 +289,38 @@ describe("SQL feed parity with buildJobView", () => {
 });
 
 import { normaliseParams } from "@/lib/job-query";
+
+describe("per-user listing state", () => {
+  it("user A's favorite/hide/tags are invisible to user B (and anonymous)", async () => {
+    const all = { showAll: "1" } as RawParams;
+    await db.query(
+      "insert into user_listing_state (user_id, listing_id, status, user_tags) values ($1, 8, 'favorite', '[\"mine\"]'::jsonb)",
+      [USER_A],
+    );
+    try {
+      const idsOf = async (uid: string | null, sp: RawParams = all) =>
+        (await runJobQuery(exec, sp, [], { pageSize: 50 }, uid)).entries.map((e) => e.listing.id);
+
+      const a = await runJobQuery(exec, all, [], { pageSize: 50 }, USER_A);
+      const row8 = a.entries.find((e) => e.listing.id === 8)!.listing;
+      expect(row8.status).toBe("favorite");
+      expect(row8.userTags).toEqual(["mine"]);
+      expect(a.entries.some((e) => e.listing.id === 5)).toBe(false); // hidden for A
+
+      for (const uid of [USER_B, null]) {
+        const v = await runJobQuery(exec, all, [], { pageSize: 50 }, uid);
+        const l8 = v.entries.find((e) => e.listing.id === 8)!.listing;
+        expect(l8.status).toBe("new");
+        expect(l8.userTags).toEqual([]);
+        expect(v.entries.some((e) => e.listing.id === 5)).toBe(true); // not hidden for B
+        expect(await idsOf(uid, { ...all, status: "favorite" })).toEqual([]);
+      }
+      expect(await idsOf(USER_A, { ...all, status: "favorite" })).toEqual(expect.arrayContaining([6, 8]));
+    } finally {
+      await db.query("delete from user_listing_state where listing_id = 8");
+    }
+  });
+});
 
 describe("normaliseParams (cache key)", () => {
   it("keeps only known, non-empty params", () => {

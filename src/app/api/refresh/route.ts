@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { after } from "next/server";
 import { startRefreshRun } from "@/lib/refresh";
 import { getRun } from "@/lib/refresh-run";
+import { AuthError, requireAdmin } from "@/lib/authz";
 
 export const maxDuration = 60;
 
@@ -24,6 +25,18 @@ function sameOrigin(request: Request): boolean {
 export async function POST(request: Request) {
   if (!sameOrigin(request)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  try {
+    await requireAdmin(); // manual refresh is admin-only (cron has its own route)
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { error: err.status === 401 ? "unauthorized" : "forbidden" },
+        { status: err.status },
+      );
+    }
+    throw err;
   }
 
   let boardId: number | undefined;

@@ -1,4 +1,5 @@
-import { LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing } from "@/db";
+import { LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
+import { requirePageUser } from "@/lib/authz";
 import type { FilterableListing, ListingStatus } from "@/lib/types";
 import {
   addUserTagAction,
@@ -20,13 +21,15 @@ const COLUMN_LIMIT = 50;
 
 export default async function AppliedPage() {
   await connection(); // request-time rendering
+  const user = await requirePageUser();
 
   // Accurate totals per column (cheap aggregate).
   const totals = new Map<string, number>(
     (
       await q<{ status: string; n: number }>(
-        `select status, count(*) as n from listings
-         where status in ('favorite','applied') group by status`,
+        `select status, count(*) as n from user_listing_state
+         where user_id = $1::uuid and status in ('favorite','applied') group by status`,
+        [user.id],
       )
     ).map((r) => [r.status, r.n]),
   );
@@ -36,19 +39,20 @@ export default async function AppliedPage() {
     await Promise.all(
       COLUMNS.map(async (col) => {
         const rows = await q<Record<string, unknown>>(
-          `select ${LISTING_POOL_SELECT}, b.name as board_name
+          `select ${LISTING_POOL_SELECT}, ${USER_STATE_SELECT}, b.name as board_name
            from listings l join boards b on b.id = l.board_id
-           where l.status = $1
+           ${userStateJoin("$1")}
+           where s.status = $2
            order by coalesce(l.posted_at, l.fetched_at) desc
            limit ${COLUMN_LIMIT}`,
-          [col.status],
+          [user.id, col.status],
         );
         return [col.status, rows.map((r) => rowToListing(r as never)) as FilterableListing[]] as const;
       }),
     ),
   );
 
-  const followedCompanies = new Set((await listFollowedCompanies()).map((n) => n.toLowerCase()));
+  const followedCompanies = new Set((await listFollowedCompanies(user.id)).map((n) => n.toLowerCase()));
   const favoriteTotal = totals.get("favorite") ?? 0;
   const appliedTotal = totals.get("applied") ?? 0;
 

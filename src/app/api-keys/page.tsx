@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { KeyRound } from "lucide-react";
+import { requirePageUser } from "@/lib/authz";
 import { listApiKeys } from "@/lib/api/keys";
 import { apiKeys } from "@/lib/api/keys-store";
 import { CreateKeyForm } from "@/components/api-keys/CreateKeyForm";
@@ -9,6 +10,7 @@ export const metadata = { title: "API Keys · JobRadar" };
 
 export default async function ApiKeysPage() {
   await connection(); // DB reads must not be prerendered
+  await requirePageUser();
   const keys = await listApiKeys(apiKeys());
 
   return (

@@ -2,8 +2,9 @@ import { q } from "@/db";
 
 /**
  * Copy today's global (single-user) state to `userId`: non-default listing
- * status/tags, followed companies, pinned countries and API keys. Runs once —
- * the `legacy_claimed` marker in app_settings gates it.
+ * status/tags (from legacy_listing_state), followed companies, pinned
+ * countries, API keys and the keyword/sound preferences. Runs once — the
+ * `legacy_claimed` marker in app_settings gates it.
  *
  * One statement, so it is atomic: the marker insert is the gate, and every
  * other write is conditional on the marker insert having succeeded (a
@@ -20,10 +21,19 @@ export async function claimLegacyState(userId: string): Promise<boolean> {
      ),
      states as (
        insert into user_listing_state (user_id, listing_id, status, user_tags)
-       select $1::uuid, l.id, l.status, l.user_tags
-         from listings l
+       select $1::uuid, l.id, ls.status, ls.user_tags
+         from legacy_listing_state ls
+         join listings l on l.id = ls.listing_id
         where exists (select 1 from gate)
-          and (l.status <> 'new' or l.user_tags <> '[]'::jsonb)
+       on conflict do nothing
+       returning 1
+     ),
+     prefs as (
+       insert into user_settings (user_id, key, value)
+       select $1::uuid, a.key, a.value
+         from app_settings a
+        where a.key in ('global_keywords', 'sound_enabled')
+          and exists (select 1 from gate)
        on conflict do nothing
        returning 1
      ),
@@ -46,7 +56,8 @@ export async function claimLegacyState(userId: string): Promise<boolean> {
        from (select count(*) from states) s,
             (select count(*) from f) f2,
             (select count(*) from p) p2,
-            (select count(*) from k) k2`,
+            (select count(*) from k) k2,
+            (select count(*) from prefs) pr`,
     [userId, marker],
   );
   return rows[0]?.claimed === true;

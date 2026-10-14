@@ -10,16 +10,18 @@ import {
 import { TestBoardButton } from "@/components/TestBoardButton";
 import { CheckCircle2, CirclePower, Clock3, Plus, RadioTower, Settings2, Trash2, TriangleAlert } from "lucide-react";
 import { connection } from "next/server";
+import { requirePageAdmin } from "@/lib/authz";
 
 export default async function BoardsPage() {
   await connection(); // request-time rendering
+  const user = await requirePageAdmin();
   const [boards, intervalHours, keywords, sound] = await Promise.all([
     q<Record<string, unknown>>("select * from boards order by name").then((rows) =>
       rows.map((r) => rowToBoard(r as never)),
     ),
     getRefreshIntervalHours(),
-    getGlobalKeywords(),
-    isSoundEnabled(),
+    getGlobalKeywords(user.id),
+    isSoundEnabled(user.id),
   ]);
   const activeBoards = boards.filter((board) => board.enabled).length;
   const healthyBoards = boards.filter((board) => board.lastStatus?.startsWith("ok")).length;

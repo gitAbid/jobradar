@@ -170,8 +170,11 @@ function build(
   globalKeywords: string[],
   boardKeywords: BoardKeywords,
   opts: JobQueryOpts,
+  userId: string | null,
 ): Built {
   const p = new Params();
+  // per-user state; null (signed out) matches no state rows → every status is 'new'
+  const uid = p.add(userId);
   const selections: Record<FacetParam, string[]> = {
     skill: asArray(sp.skill),
     country: asArray(sp.country),
@@ -240,9 +243,11 @@ function build(
   };
 
   const withBase = `with base as (
-    select l.id, l.board_id, l.title, l.company, l.location, l.status, l.is_remote,
+    select l.id, l.board_id, l.title, l.company, l.location, l.is_remote,
       l.visa_sponsorship, l.remote_scope, l.tags, l.skills, l.url, l.external_id,
-      l.posted_at, l.deadline, l.fetched_at, l.user_tags,
+      l.posted_at, l.deadline, l.fetched_at,
+      coalesce(s.status, 'new') as status,
+      coalesce(s.user_tags, '[]'::jsonb) as user_tags,
       b.name as board_name, b.filter_keywords as board_filter_keywords,
       coalesce(l.posted_at, l.fetched_at) as sort_at,
       lower(l.company || '|' || l.title) as dk,
@@ -250,6 +255,7 @@ function build(
       (l.title || ' ' || l.company || ' ' || l.location || ' ' ||
         array_to_string(array(select jsonb_array_elements_text(l.tags)), ' ')) as hay
     from listings l join boards b on b.id = l.board_id
+    left join user_listing_state s on s.listing_id = l.id and s.user_id = ${uid}::uuid
     ${opts.bd ? `where ${bdWhereSql()}` : ""}
   )`;
 
@@ -267,8 +273,9 @@ export function buildFacetQuery(
   globalKeywords: string[],
   boardKeywords: BoardKeywords,
   opts: JobQueryOpts,
+  userId: string | null = null,
 ): BuiltQuery {
-  const { withBase, where, selections, params } = build(sp, globalKeywords, boardKeywords, opts);
+  const { withBase, where, selections, params } = build(sp, globalKeywords, boardKeywords, opts, userId);
 
   const parts = [
     `select 'skill' as k, s.name, count(*)::int as n
@@ -314,8 +321,9 @@ export function buildPageQuery(
   boardKeywords: BoardKeywords,
   opts: JobQueryOpts,
   page: number,
+  userId: string | null = null,
 ): BuiltQuery {
-  const { withBase, where, params } = build(sp, globalKeywords, boardKeywords, opts);
+  const { withBase, where, params } = build(sp, globalKeywords, boardKeywords, opts, userId);
   const limit = params.add(opts.pageSize);
   const offset = params.add((page - 1) * opts.pageSize);
   const text = `${withBase},
@@ -369,7 +377,7 @@ export function rowToFeedListing(r: Record<string, unknown>): FilterableListing 
     postedAt: isoOrNull(r.posted_at),
     deadline: isoOrNull(r.deadline),
     fetchedAt: isoOrNull(r.fetched_at) ?? "",
-    status: r.status as ListingStatus,
+    status: (r.status as ListingStatus | undefined) ?? "new",
     userTags: parseStringArray(r.user_tags),
     description: typeof r.description === "string" ? r.description : "",
     boardFilterKeywords: parseStringArray(r.board_filter_keywords),
@@ -396,10 +404,11 @@ export async function runJobQuery(
   sp: RawParams,
   globalKeywords: string[],
   opts: JobQueryOpts,
+  userId: string | null = null,
 ): Promise<JobView> {
   const boardKeywords = await loadBoardKeywords(exec);
 
-  const facetQ = buildFacetQuery(sp, globalKeywords, boardKeywords, opts);
+  const facetQ = buildFacetQuery(sp, globalKeywords, boardKeywords, opts, userId);
   const facetRows = await exec(facetQ.text, facetQ.values);
 
   const counts: Record<FacetParam, Map<string, number>> = {
@@ -442,7 +451,7 @@ export async function runJobQuery(
 
   let entries: JobEntry[] = [];
   if (totalVisible > 0) {
-    const pageQ = buildPageQuery(sp, globalKeywords, boardKeywords, opts, currentPage);
+    const pageQ = buildPageQuery(sp, globalKeywords, boardKeywords, opts, currentPage, userId);
     const rows = await exec(pageQ.text, pageQ.values);
     entries = rows.map((row) => {
       const listing = rowToFeedListing(row);
@@ -453,7 +462,11 @@ export async function runJobQuery(
   return { entries, totalVisible, totalNew, currentPage, totalPages, selections, facets };
 }
 
-/** One non-hidden listing by id, with description (null when absent/hidden). */
+/**
+ * One listing by id, with description (null when absent). Shared data only:
+ * status is always "new" and userTags empty — per-user state is never part of
+ * this (cached) lookup; see `fetchUserListingState`.
+ */
 export async function fetchListingById(
   exec: SqlExec,
   id: number,
@@ -461,13 +474,30 @@ export async function fetchListingById(
   const rows = await exec(
     `select l.id, l.board_id, l.external_id, l.title, l.company, l.location, l.is_remote,
        l.visa_sponsorship, l.remote_scope, l.tags, l.skills, l.url, l.posted_at, l.deadline,
-       l.fetched_at, l.status, l.user_tags, l.description,
+       l.fetched_at, l.description,
        b.name as board_name, b.filter_keywords as board_filter_keywords
      from listings l join boards b on b.id = l.board_id
-     where l.id = $1::int and l.status <> 'hidden'`,
+     where l.id = $1::int`,
     [id],
   );
   return rows[0] ? rowToFeedListing(rows[0]) : null;
+}
+
+/** One user's state for one listing (uncached; defaults when no row). */
+export async function fetchUserListingState(
+  exec: SqlExec,
+  userId: string,
+  listingId: number,
+): Promise<{ status: ListingStatus; userTags: string[] }> {
+  const rows = await exec(
+    "select status, user_tags from user_listing_state where user_id = $1::uuid and listing_id = $2::int",
+    [userId, listingId],
+  );
+  const r = rows[0];
+  return {
+    status: (r?.status as ListingStatus | undefined) ?? "new",
+    userTags: parseStringArray(r?.user_tags),
+  };
 }
 
 // ── Shared cache (Next 16 Cache Components) ────────────────────────────────
@@ -525,19 +555,21 @@ function loggedRemote(label: string): SqlExec {
 }
 
 /**
- * Shared feed page + facets, cached across requests under the `listings`
- * tag. Arguments are the cache key: only shared dimensions go in (filters,
- * global keywords, opts). Per-user data (follows, pins) stays with callers.
+ * Feed page + facets, cached under the `listings` tag AND the caller's
+ * `user-state:<id>` tag. Arguments are the cache key, so `userId` makes every
+ * entry per-user (never served across users). Resolve the user OUTSIDE this
+ * function: auth() must not run inside `'use cache'`.
  */
 export async function getCachedJobView(
+  userId: string | null,
   sp: RawParams,
   globalKeywords: string[],
   opts: JobQueryOpts,
 ): Promise<JobView> {
   "use cache: remote";
   cacheLife(LISTINGS_LIFE);
-  cacheTag("listings");
-  return runJobQuery(loggedRemote("page"), sp, globalKeywords, opts);
+  cacheTag("listings", `user-state:${userId ?? "anon"}`);
+  return runJobQuery(loggedRemote("page"), sp, globalKeywords, opts, userId);
 }
 
 export async function getCachedListingById(id: number): Promise<FilterableListing | null> {

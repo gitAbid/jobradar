@@ -1,5 +1,6 @@
 import { listFollowedCompanies, listPinnedCountries } from "@/db";
 import { getGlobalKeywords } from "@/lib/settings";
+import { requirePageUser } from "@/lib/authz";
 import { FACET_LIMIT, loadJobView, PAGE_SIZE } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
@@ -29,12 +30,13 @@ export default async function DashboardPage({
   searchParams: Promise<SearchParams>;
 }) {
   await connection(); // always render at request time (DB reads must not be prerendered)
+  const user = await requirePageUser();
   const sp = await searchParams;
-  const globalKeywords = await getGlobalKeywords();
+  const globalKeywords = await getGlobalKeywords(user.id);
   // one page of rows + aggregated facet counts, computed in SQL
-  const view = await loadJobView(sp, globalKeywords, { facetLimit: FACET_LIMIT });
-  const followedCompanies = new Set((await listFollowedCompanies()).map((n) => n.toLowerCase()));
-  const pinnedCountries = (await listPinnedCountries()).map((n) => n.toLowerCase());
+  const view = await loadJobView(user.id, sp, globalKeywords, { facetLimit: FACET_LIMIT });
+  const followedCompanies = new Set((await listFollowedCompanies(user.id)).map((n) => n.toLowerCase()));
+  const pinnedCountries = (await listPinnedCountries(user.id)).map((n) => n.toLowerCase());
 
   return (
     <div className="flex flex-col gap-5">

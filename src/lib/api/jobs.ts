@@ -56,7 +56,7 @@ export interface FeedSource {
 }
 
 export const sqlFeedSource: FeedSource = {
-  view: (params, opts) => loadJobView(params, [], { pageSize: opts.pageSize }),
+  view: (params, opts) => loadJobView(null, params, [], { pageSize: opts.pageSize }),
   byId: (id) => getCachedListingById(id),
 };
 

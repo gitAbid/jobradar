@@ -1,5 +1,6 @@
 import { listPinnedCountries } from "@/db";
 import { getGlobalKeywords } from "@/lib/settings";
+import { requirePageUser } from "@/lib/authz";
 import { FACET_LIMIT, loadJobView, PAGE_SIZE } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
@@ -28,10 +29,11 @@ export default async function BangladeshPage({
   searchParams: Promise<SearchParams>;
 }) {
   await connection(); // request-time rendering
+  const user = await requirePageUser();
   const sp = await searchParams;
-  const globalKeywords = await getGlobalKeywords();
+  const globalKeywords = await getGlobalKeywords(user.id);
   // Bangladesh-relevant rows only (exact regex in SQL), one page + facets
-  const view = await loadJobView(sp, globalKeywords, { bd: true, facetLimit: FACET_LIMIT });
+  const view = await loadJobView(user.id, sp, globalKeywords, { bd: true, facetLimit: FACET_LIMIT });
 
   return (
     <div className="flex flex-col gap-5">
@@ -63,7 +65,7 @@ export default async function BangladeshPage({
       </section>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:gap-6">
-        <FacetSidebar facets={view.facets} pinnedCountries={(await listPinnedCountries()).map((n) => n.toLowerCase())} />
+        <FacetSidebar facets={view.facets} pinnedCountries={(await listPinnedCountries(user.id)).map((n) => n.toLowerCase())} />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-end justify-between gap-3">

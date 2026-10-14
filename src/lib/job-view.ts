@@ -209,11 +209,12 @@ export function buildJobView(
  * `buildJobView`, which stays as the in-memory parity oracle.
  */
 export async function loadJobView(
+  userId: string | null,
   sp: RawParams,
   globalKeywords: string[],
   opts: { pageSize?: number; bd?: boolean; facetLimit?: number } = {},
 ): Promise<JobView> {
-  const view = await getCachedJobView(normaliseParams(sp), globalKeywords, {
+  const view = await getCachedJobView(userId, normaliseParams(sp), globalKeywords, {
     pageSize: opts.pageSize ?? PAGE_SIZE,
     ...(opts.bd ? { bd: true } : {}),
     ...(opts.facetLimit !== undefined ? { facetLimit: opts.facetLimit } : {}),

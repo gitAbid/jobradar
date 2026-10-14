@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 
 export class AuthError extends Error {
@@ -34,5 +35,19 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireAdmin(): Promise<SessionUser> {
   const user = await requireUser();
   if (user.role !== "admin") throw new AuthError(403);
+  return user;
+}
+
+/** Page guard: anonymous → /signin. Call after `await connection()`. */
+export async function requirePageUser(): Promise<SessionUser> {
+  const user = await getSessionUser();
+  if (!user) redirect("/signin");
+  return user;
+}
+
+/** Page guard for admin-only pages: anonymous → /signin, non-admin → 404. */
+export async function requirePageAdmin(): Promise<SessionUser> {
+  const user = await requirePageUser();
+  if (user.role !== "admin") notFound();
   return user;
 }

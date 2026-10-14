@@ -1,6 +1,7 @@
 import { connection } from "next/server";
+import { requirePageUser } from "@/lib/authz";
 import Link from "next/link";
-import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing } from "@/db";
+import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
 import { toggleFollowCompanyAction } from "@/app/actions";
 import { ListingCard } from "@/components/ListingCard";
 import { ArrowUpRight, Building2, Heart, Star, X } from "lucide-react";
@@ -18,9 +19,10 @@ export default async function FollowingPage({
   searchParams: Promise<SearchParams>;
 }) {
   await connection(); // request-time rendering
+  const user = await requirePageUser();
   const sp = await searchParams;
 
-  const followed = await listFollowedCompanies();
+  const followed = await listFollowedCompanies(user.id);
   const selected = sp.company?.trim();
   // only accept a filter that matches a followed company (case-insensitive)
   const activeCompany =
@@ -32,16 +34,17 @@ export default async function FollowingPage({
   // Capped: a prolific company shouldn't produce an unbounded page.
   const rows = followed.length
     ? await q<Record<string, unknown>>(
-        `select ${LISTING_POOL_SELECT}, b.name as board_name
+        `select ${LISTING_POOL_SELECT}, ${USER_STATE_SELECT}, b.name as board_name
          from listings l join boards b on b.id = l.board_id
+         ${userStateJoin("$1")}
          where exists (
            select 1 from followed_companies fc
-           where lower(fc.name) = lower(l.company)
+           where fc.user_id = $1::uuid and lower(fc.name) = lower(l.company)
          )
-         ${activeCompany ? "and lower(l.company) = lower($1)" : ""}
+         ${activeCompany ? "and lower(l.company) = lower($2)" : ""}
          order by coalesce(l.posted_at, l.fetched_at) desc
          limit ${FOLLOWING_LIMIT}`,
-        activeCompany ? [activeCompany] : [],
+        activeCompany ? [user.id, activeCompany] : [user.id],
       )
     : [];
 
@@ -55,7 +58,9 @@ export default async function FollowingPage({
       await q<{ company: string; n: number }>(
         `select min(l.company) as company, count(*) as n
          from listings l join followed_companies f on lower(f.name) = lower(l.company)
+         where f.user_id = $1::uuid
          group by lower(l.company)`,
+        [user.id],
       )
     ).map((r) => [r.company.toLowerCase(), r.n]),
   );

@@ -187,8 +187,17 @@ async function upsertListings(boardId: number, listings: NormalizedListing[]): P
   );
 }
 
-/** Remove non-saved listings not refetched in 45 days (applied/favorite are kept). */
+/**
+ * Remove listings not refetched in 45 days, unless any user has saved them
+ * (status other than 'new') or they carry unclaimed legacy state.
+ */
 async function expireOldListings(): Promise<void> {
   const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
-  await run("delete from listings where status = 'new' and fetched_at < $1::timestamptz", [cutoff]);
+  await run(
+    `delete from listings l
+      where l.fetched_at < $1::timestamptz
+        and not exists (select 1 from user_listing_state s where s.listing_id = l.id and s.status <> 'new')
+        and not exists (select 1 from legacy_listing_state g where g.listing_id = l.id and g.status <> 'new')`,
+    [cutoff],
+  );
 }

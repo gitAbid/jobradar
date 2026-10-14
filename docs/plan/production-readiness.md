@@ -352,7 +352,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test, build.
 
-## P3.4 Scope data by user  [ ]   model: sonnet   depends: P3.3
+## P3.4 Scope data by user  [x]   model: sonnet   depends: P3.3
 **Files:** `src/app/actions.ts`, `src/app/api-keys/actions.ts`, `src/lib/settings.ts`, `src/lib/job-query.ts`, `src/app/{page,applied,following,bangladesh,boards,api-keys}/page.tsx`, `src/app/layout.tsx`, `db/migrations/005_drop_global_state.sql`, tests.
 
 **Acceptance:**

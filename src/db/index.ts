@@ -41,9 +41,16 @@ export const LISTING_POOL_SELECT = [
   "l.posted_at",
   "l.deadline",
   "l.fetched_at",
-  "l.status",
-  "l.user_tags",
 ].join(", ");
+
+/** Per-user state columns; pair with `userStateJoin` (status/tags are not `listings` columns). */
+export const USER_STATE_SELECT =
+  "coalesce(s.status, 'new') as status, coalesce(s.user_tags, '[]'::jsonb) as user_tags";
+
+/** Join for USER_STATE_SELECT; `param` is the placeholder of the user id (e.g. "$1"). */
+export function userStateJoin(param: string): string {
+  return `left join user_listing_state s on s.listing_id = l.id and s.user_id = ${param}::uuid`;
+}
 
 /** Descriptions for one page of visible rows — small and bounded. */
 export async function qDescriptionsByIds(ids: number[]): Promise<Map<number, string>> {
@@ -265,9 +272,10 @@ export async function persistEnrichment(
 // ── Followed companies ─────────────────────────────────────────────────────
 
 /** All followed company names, alphabetical (case-insensitive). */
-export async function listFollowedCompanies(): Promise<string[]> {
+export async function listFollowedCompanies(userId: string): Promise<string[]> {
   const rows = await q<{ name: string }>(
-    "select name from followed_companies order by lower(name)",
+    "select name from followed_companies where user_id = $1::uuid order by lower(name)",
+    [userId],
   );
   return rows.map((r) => r.name);
 }
@@ -275,9 +283,10 @@ export async function listFollowedCompanies(): Promise<string[]> {
 // ── Pinned countries ───────────────────────────────────────────────────────
 
 /** All pinned country names, alphabetical (case-insensitive). */
-export async function listPinnedCountries(): Promise<string[]> {
+export async function listPinnedCountries(userId: string): Promise<string[]> {
   const rows = await q<{ name: string }>(
-    "select name from pinned_countries order by lower(name)",
+    "select name from pinned_countries where user_id = $1::uuid order by lower(name)",
+    [userId],
   );
   return rows.map((r) => r.name);
 }
