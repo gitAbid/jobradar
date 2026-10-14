@@ -1,58 +1,6 @@
 /**
- * Postgres → SQLite translation for the local-first layer.
- *
- * The whole app writes Postgres-dialect SQL with `$n` placeholders (Neon).
- * The on-device SQLite mirror executes the same statements, so every query
- * passes through here first. The app's SQL surface is small and reviewed in
- * one place (this repo), which keeps the translation honest: `$n` params and
- * `::type` casts are the only PG-isms in the query set. Statements that are
- * Postgres-only (RLS, DDL, the unnest-based seed) are flagged `skipLocal` —
- * the local schema owns its own DDL and seeds itself.
+ * Remote (Neon) error handling: timeouts and failure classification.
  */
-
-export interface Translated {
-  sql: string;
-  /** Params expanded to one value per `?` (repeated `$n` duplicates the value). */
-  params: unknown[];
-  /** True when the statement must not run against SQLite (PG-only DDL/RLS/seed). */
-  skipLocal: boolean;
-}
-
-export function translateToSqlite(query: string, params: unknown[] = []): Translated {
-  const skipLocal = isPostgresOnly(query);
-  const byIndex = new Map<number, unknown>();
-  params.forEach((p, i) => byIndex.set(i + 1, p === undefined ? null : p));
-
-  // strip `::type` casts before placeholder expansion (no string literal in
-  // this repo's SQL ever contains "::")
-  const stripped = query.replace(/::\s*[a-zA-Z_][a-zA-Z0-9_]*(\s*\(\s*\d+\s*\))?/g, "");
-
-  const expanded: unknown[] = [];
-  const sql = stripped.replace(/\$(\d+)/g, (_, n: string) => {
-    expanded.push(byIndex.get(Number(n)) ?? null);
-    return "?";
-  });
-
-  return { sql, params: expanded, skipLocal };
-}
-
-/** Statements that exist only to shape/seed the remote Postgres database. */
-export function isPostgresOnly(query: string): boolean {
-  const sql = query.trim();
-  if (/^(create|alter|drop)\b/i.test(sql)) return true;
-  if (/\bunnest\s*\(/i.test(sql)) return true;
-  return false;
-}
-
-/** Reads are served from the local mirror/cache; everything else is a write. */
-export function isReadStatement(query: string): boolean {
-  return /^\s*(select|with)\b/i.test(query);
-}
-
-/** INSERT/UPDATE/DELETE with a RETURNING clause — resolves to rows, not a count. */
-export function hasReturningClause(query: string): boolean {
-  return /\breturning\b/i.test(query);
-}
 
 export type RemoteErrorClass = "connection" | "limit" | "query";
 

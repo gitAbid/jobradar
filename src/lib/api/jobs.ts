@@ -1,4 +1,4 @@
-import { classifyRemoteError } from "@/db/translate";
+import { classifyRemoteError } from "@/db/errors";
 import { authenticateApiKey, type KeyStore } from "@/lib/api/keys";
 import { parseJobsQuery } from "@/lib/api/query";
 import { toPublicJob } from "@/lib/api/serialize";

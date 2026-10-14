@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { withTimeout } from "@/db/translate";
+import { withTimeout } from "@/db/errors";
 import { approxBytes, recordQuery } from "@/db/usage";
 
 // ── Postgres connection (Neon; singleton survives HMR via globalThis) ──

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { PGlite } from "@electric-sql/pglite";
 
 import {
   attachDescriptions,
@@ -10,32 +10,15 @@ import {
   q,
   qDescriptionsByIds,
   qOne,
-  resetLocalFirstForTests,
   rowToListing,
   run,
   setRemoteHarness,
-  type RemoteHarness,
 } from "@/db";
 import { bdPrefilterWhere, isBangladeshRelevant } from "@/lib/bd";
 import { buildSearchText } from "@/lib/filters";
 import type { FilterableListing } from "@/lib/types";
 
-const CONN_FAIL = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
-  code: "ECONNREFUSED",
-});
-
-// Remote "down": every query is served from the on-device store, which is
-// exactly the path that lets us assert on transferred bytes locally.
-const downHarness: RemoteHarness = {
-  query: async () => {
-    throw CONN_FAIL;
-  },
-  run: async () => {
-    throw CONN_FAIL;
-  },
-};
-
-let dir: string;
+let db: PGlite;
 let boardId: number;
 
 const BIG = "lorem ipsum dolor sit amet ".repeat(800); // ~21KB per description
@@ -73,10 +56,17 @@ function makeRow(overrides: {
 }
 
 beforeEach(async () => {
-  dir = mkdtempSync(path.join(tmpdir(), "jobradar-pool-"));
-  process.env.LOCAL_DB_PATH = path.join(dir, "local.db");
-  process.env.DATABASE_URL = "postgres://harness:test@localhost:5432/db";
-  setRemoteHarness(downHarness);
+  db = new PGlite();
+  for (const file of readdirSync(join(process.cwd(), "db/migrations")).sort()) {
+    if (file.endsWith(".sql")) {
+      await db.exec(readFileSync(join(process.cwd(), "db/migrations", file), "utf8"));
+    }
+  }
+  setRemoteHarness({
+    query: async (sql, params) =>
+      (await db.query(sql, params)).rows as Record<string, unknown>[],
+    run: async (sql, params) => (await db.query(sql, params)).affectedRows ?? 0,
+  });
 
   await run(
     "insert into boards (name, type, url, filter_keywords) values ($1, $2, $3, $4)",
@@ -109,11 +99,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await resetLocalFirstForTests();
   setRemoteHarness(null);
-  delete process.env.LOCAL_DB_PATH;
-  delete process.env.DATABASE_URL;
-  rmSync(dir, { recursive: true, force: true });
+  await db.close();
 });
 
 describe("pruned listings pool", () => {

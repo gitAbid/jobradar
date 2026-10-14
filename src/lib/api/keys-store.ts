@@ -1,28 +1,9 @@
 import type { KeyStore, ApiKeyRecord } from "@/lib/api/keys";
-import {
-  getRemoteHarness,
-  isRemoteConfigured,
-  remoteQuery,
-  remoteRun,
-  remoteRunReturning,
-} from "@/db/remote";
-import { getBreaker } from "@/db/remote-health";
-import { classifyRemoteError } from "@/db/translate";
-import { getLocalStore } from "@/db/local-store";
-import { bufferBlobOps } from "@/lib/blob-sync";
-import type { OutboxOp } from "@/db/outbox";
+import { remoteQuery, remoteRun, remoteRunReturning } from "@/db/remote";
 
 /**
- * Remote-authoritative KeyStore.
- *
- * Why this bypasses the local-first router (`q`/`run`): API keys need
- * strong consistency. The on-device SQLite mirror is eventually consistent
- * (hydrated at most every 2 min) and — on serverless hosts — ephemeral per
- * instance (`/tmp` is discarded between invocations). Routing keys through
- * it meant a key created on one Vercel instance was invisible on the next,
- * and local/remote row ids diverged so revokes missed. This store therefore
- * talks to Neon directly whenever it can and only falls back to the
- * on-device store when the remote is unreachable or unconfigured.
+ * Neon-backed KeyStore. Failures throw: connection/limit errors are
+ * classified by callers (see `classifyRemoteError`), real SQL bugs surface.
  */
 
 interface ApiKeyRow {
@@ -48,217 +29,52 @@ function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
   };
 }
 
-/** True when a remote attempt should be made (configured + breaker allows). */
-function canTryRemote(): boolean {
-  if (!isRemoteConfigured() && !getRemoteHarness()) return false;
-  return getBreaker().canAttempt();
-}
-
-/**
- * Run `fn` against Neon. Connection/limit failures trip the breaker and
- * resolve `{ ok: false }` so callers fall back locally; real SQL bugs
- * rethrow — they must surface, never masquerade as "not found".
- */
-async function tryRemote<T>(
-  fn: () => Promise<T>,
-): Promise<{ ok: true; value: T } | { ok: false }> {
-  if (!canTryRemote()) return { ok: false };
-  try {
-    const value = await fn();
-    getBreaker().recordSuccess();
-    return { ok: true, value };
-  } catch (err) {
-    const cls = classifyRemoteError(err);
-    if (cls === "query") throw err;
-    getBreaker().recordFailure(err, cls);
-    console.warn(
-      "[jobradar] api-keys: remote unreachable, using local fallback:",
-      err instanceof Error ? err.message : err,
-    );
-    return { ok: false };
-  }
-}
-
-/** Best-effort mirror of a remote row into the on-device store (same id). */
-async function mirrorRemoteRow(row: {
-  id: number;
-  name: string;
-  keyHash: string;
-  prefix: string;
-  createdAt: string;
-}): Promise<void> {
-  const store = await getLocalStore();
-  if (!store) return;
-  store.exec(
-    `insert into api_keys (id, name, key_hash, prefix, created_at)
-     values ($1, $2, $3, $4, $5) on conflict (key_hash) do nothing`,
-    [row.id, row.name, row.keyHash, row.prefix, row.createdAt],
-  );
-}
-
-async function mirrorRevokeLocal(id: number, revokedAt: string): Promise<void> {
-  const store = await getLocalStore();
-  if (!store) return;
-  store.exec(`update api_keys set revoked_at = $1 where id = $2 and revoked_at is null`, [
-    revokedAt,
-    id,
-  ]);
-}
-
-class RemoteFirstKeyStore implements KeyStore {
+class NeonKeyStore implements KeyStore {
   async insert(key: {
     name: string;
     keyHash: string;
     prefix: string;
     createdAt: string;
   }): Promise<number> {
-    const remote = await tryRemote(async () => {
-      const rows = await remoteRunReturning<{ id: number }>(
-        "insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4) returning id",
-        [key.name, key.keyHash, key.prefix, key.createdAt],
-      );
-      if (!rows[0]) throw new Error("api_keys insert returned no id");
-      return Number(rows[0].id);
-    });
-    if (remote.ok) {
-      await mirrorRemoteRow({ ...key, id: remote.value }).catch(() => {});
-      return remote.value;
-    }
-
-    // Remote down or unconfigured: persist locally and queue a replay op so
-    // the key reaches Neon on recovery (long-lived hosts; on serverless the
-    // on-device store is ephemeral — see isLocalFirstEnabled).
-    const store = await getLocalStore();
-    if (!store) {
-      throw new Error(
-        "Database unavailable — could not create the API key. Try again shortly.",
-      );
-    }
-    const res = store.exec(
+    const rows = await remoteRunReturning<{ id: number }>(
       "insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4) returning id",
       [key.name, key.keyHash, key.prefix, key.createdAt],
     );
-    const row = res.rows[0] as unknown as { id: number } | undefined;
-    if (!row) throw new Error("local api_keys insert returned no id");
-    const id = Number(row.id);
-    const insertOp: OutboxOp = {
-      kind: "api-key-insert",
-      name: key.name,
-      keyHash: key.keyHash,
-      prefix: key.prefix,
-      createdAt: key.createdAt,
-    };
-    try {
-      store.enqueue("op", insertOp);
-    } catch {
-      // queue write must never break key creation
-    }
-    bufferBlobOps(insertOp); // durable on serverless; no-op without a store
-    return id;
+    if (!rows[0]) throw new Error("api_keys insert returned no id");
+    return Number(rows[0].id);
   }
 
   async list(): Promise<ApiKeyRecord[]> {
-    const remote = await tryRemote(async () => {
-      const rows = await remoteQuery<ApiKeyRow>("select * from api_keys order by id desc");
-      return rows.map(rowToRecord);
-    });
-    if (remote.ok) return remote.value;
-
-    const store = await getLocalStore();
-    if (!store) return [];
-    return store
-      .exec("select * from api_keys order by id desc")
-      .rows.map((r) => rowToRecord(r as unknown as ApiKeyRow));
+    const rows = await remoteQuery<ApiKeyRow>("select * from api_keys order by id desc");
+    return rows.map(rowToRecord);
   }
 
   async revoke(id: number, revokedAt: string): Promise<boolean> {
-    const remote = await tryRemote(async () => {
-      const count = await remoteRun(
-        "update api_keys set revoked_at = $1 where id = $2 and revoked_at is null",
-        [revokedAt, id],
-      );
-      return count > 0;
-    });
-    if (remote.ok) {
-      await mirrorRevokeLocal(id, revokedAt).catch(() => {});
-      return remote.value;
-    }
-
-    const store = await getLocalStore();
-    if (!store) {
-      throw new Error("Database unavailable — could not revoke the API key.");
-    }
-    // Resolve the hash first so the queued replay stays correct even though
-    // local and remote row ids are independent sequences.
-    const found = store.exec("select key_hash from api_keys where id = $1", [id]).rows[0] as
-      | unknown as { key_hash: string } | undefined;
-    const res = store.exec(
+    const count = await remoteRun(
       "update api_keys set revoked_at = $1 where id = $2 and revoked_at is null",
       [revokedAt, id],
     );
-    const ok = res.changes > 0;
-    if (ok && found) {
-      const updateOp: OutboxOp = {
-        kind: "api-key-update",
-        keyHash: String(found.key_hash),
-        fields: { revoked_at: revokedAt },
-      };
-      try {
-        store.enqueue("op", updateOp);
-      } catch {
-        // queue write must never break revocation
-      }
-      bufferBlobOps(updateOp);
-    }
-    return ok;
+    return count > 0;
   }
 
   async findByHash(keyHash: string): Promise<ApiKeyRecord | null> {
-    const remote = await tryRemote(async () => {
-      const rows = await remoteQuery<ApiKeyRow>(
-        "select * from api_keys where key_hash = $1",
-        [keyHash],
-      );
-      return rows[0] ? rowToRecord(rows[0]) : null;
-    });
-    if (remote.ok) return remote.value;
-
-    const store = await getLocalStore();
-    if (!store) return null;
-    const rows = store.exec("select * from api_keys where key_hash = $1", [keyHash]).rows;
-    const row = rows[0] as unknown as ApiKeyRow | undefined;
-    return row ? rowToRecord(row) : null;
+    const rows = await remoteQuery<ApiKeyRow>("select * from api_keys where key_hash = $1", [
+      keyHash,
+    ]);
+    return rows[0] ? rowToRecord(rows[0]) : null;
   }
 
   async recordUsage(id: number, usedAt: string): Promise<void> {
-    const remote = await tryRemote(async () => {
-      await remoteRun(
-        "update api_keys set last_used_at = $1, request_count = request_count + 1 where id = $2",
-        [usedAt, id],
-      );
-    });
-    if (!remote.ok) {
-      // Offline usage stats: local-only, best-effort. The op normalizer
-      // re-keys this by key_hash at replay time (see outbox.ts).
-      try {
-        const store = await getLocalStore();
-        store?.exec(
-          "update api_keys set last_used_at = $1, request_count = request_count + 1 where id = $2",
-          [usedAt, id],
-        );
-      } catch {
-        // stats must never break a request
-      }
-    }
+    await remoteRun(
+      "update api_keys set last_used_at = $1, request_count = request_count + 1 where id = $2",
+      [usedAt, id],
+    );
   }
 }
 
-const singleton = new RemoteFirstKeyStore();
+const singleton = new NeonKeyStore();
 
 /** The process-wide store used by routes and server actions. */
 export function apiKeys(): KeyStore {
   return singleton;
 }
-
-/** Retained for test compatibility; schema now comes from db/migrations. */
-export function resetApiKeysSchemaForTests(): void {}

@@ -135,13 +135,12 @@ describe("toPublicJob", () => {
 
 // ── Endpoint builders ───────────────────────────────────────────────────────
 
-import { afterEach, beforeEach, vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import {
   createApiKey,
   InMemoryKeyStore,
   type KeyStore,
 } from "@/lib/api/keys";
-import { getBreaker, resetBreakerForTests } from "@/db/remote-health";
 import {
   corsPreflight,
   jobDetailResponse,
@@ -238,10 +237,6 @@ describe("jobsListResponse", () => {
   });
 
   describe("auth before load", () => {
-    afterEach(() => {
-      resetBreakerForTests();
-    });
-
     it("never loads the pool for missing or invalid keys", async () => {
       const load = vi.fn(loader(basePool()));
       expect((await jobsListResponse(req("/api/v1/jobs", false), store, load)).status).toBe(401);
@@ -266,15 +261,6 @@ describe("jobsListResponse", () => {
       expect(res.status).toBe(503);
       expect(await body(res)).toEqual({ error: "unavailable" });
       expect(load).not.toHaveBeenCalled();
-    });
-
-    it("does not fail open when the breaker is down", async () => {
-      getBreaker().recordFailure(
-        Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
-        "connection",
-      );
-      const res = await jobsListResponse(req("/api/v1/jobs", false), store, loader(basePool()));
-      expect(res.status).toBe(401);
     });
   });
 

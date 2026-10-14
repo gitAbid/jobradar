@@ -1,19 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
-import {
-  dbStatus,
-  resetLocalFirstForTests,
-  setRemoteHarness,
-  type RemoteHarness,
-} from "@/db";
-import { getLocalStore } from "@/db/local-store";
-import { resetBreakerForTests } from "@/db/remote-health";
-import { drainOutbox } from "@/db/sync";
+import { setRemoteHarness, type RemoteHarness } from "@/db";
+import { classifyRemoteError } from "@/db/errors";
 import { hashKey } from "@/lib/api/keys";
-import { apiKeys, resetApiKeysSchemaForTests } from "@/lib/api/keys-store";
+import { apiKeys } from "@/lib/api/keys-store";
 
 const CONN_FAIL = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
   code: "ECONNREFUSED",
@@ -120,26 +110,16 @@ function makeApiRemote() {
   return { harness, rows, runCalls };
 }
 
-let dir: string;
-
 beforeEach(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "jobradar-apikeys-"));
-  process.env.LOCAL_DB_PATH = path.join(dir, "local.db");
   process.env.DATABASE_URL = "postgres://harness:test@localhost:5432/db";
 });
 
-afterEach(async () => {
-  await resetLocalFirstForTests();
+afterEach(() => {
   setRemoteHarness(null);
-  resetApiKeysSchemaForTests();
-  delete process.env.LOCAL_DB_PATH;
-  delete process.env.LOCAL_FIRST;
   delete process.env.DATABASE_URL;
-  delete process.env.VERCEL;
-  rmSync(dir, { recursive: true, force: true });
 });
 
-describe("RemoteFirstKeyStore (remote configured)", () => {
+describe("NeonKeyStore", () => {
   it("inserts remotely and lists the remote row immediately", async () => {
     const fake = makeApiRemote();
     setRemoteHarness(fake.harness);
@@ -194,54 +174,24 @@ describe("RemoteFirstKeyStore (remote configured)", () => {
   });
 });
 
-describe("RemoteFirstKeyStore (remote down)", () => {
-  it("falls back locally, queues an api-key-insert op, and replays it", async () => {
+describe("NeonKeyStore (remote down)", () => {
+  it("throws a classifiable error instead of falling back", async () => {
     setRemoteHarness(downHarness);
     const store = apiKeys();
 
-    const localId = await store.insert({
-      name: "offline-app",
-      keyHash: hashKey("jrk_offline"),
-      prefix: "jrk_offline",
-      createdAt: new Date().toISOString(),
-    });
-    expect(localId).toBeGreaterThan(0);
+    const err = await store
+      .insert({
+        name: "offline-app",
+        keyHash: hashKey("jrk_offline"),
+        prefix: "jrk_offline",
+        createdAt: new Date().toISOString(),
+      })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(classifyRemoteError(err)).toBe("connection");
 
-    // still visible through the local fallback
-    expect((await store.list()).map((k) => k.name)).toEqual(["offline-app"]);
-
-    const local = await getLocalStore();
-    const entry = local!.readQueue()[0];
-    expect(entry.kind).toBe("op");
-    expect(entry.payload).toMatchObject({ kind: "api-key-insert", name: "offline-app" });
-
-    // recovery: the queued insert replays idempotently to Neon
-    const fake = makeApiRemote();
-    setRemoteHarness(fake.harness);
-    resetBreakerForTests();
-    const { remaining } = await drainOutbox(local!);
-    expect(remaining).toBe(0);
-    expect(fake.rows).toHaveLength(1);
-    expect(fake.rows[0].name).toBe("offline-app");
-
-    // and the key is now served from the remote
-    resetApiKeysSchemaForTests();
-    expect((await store.list()).map((k) => k.name)).toEqual(["offline-app"]);
-  });
-});
-
-describe("serverless default", () => {
-  it("VERCEL=1 disables the on-device mirror (remote-direct)", async () => {
-    process.env.VERCEL = "1";
-    await resetLocalFirstForTests();
-    expect(await getLocalStore()).toBeNull();
-    expect((await dbStatus()).mode).toBe("remote-direct");
-  });
-
-  it("LOCAL_FIRST=1 still opts back into the mirror on serverless", async () => {
-    process.env.VERCEL = "1";
-    process.env.LOCAL_FIRST = "1";
-    await resetLocalFirstForTests();
-    expect(await getLocalStore()).not.toBeNull();
+    await expect(store.list()).rejects.toThrow(/ECONNREFUSED/);
+    await expect(store.findByHash(hashKey("x"))).rejects.toThrow(/ECONNREFUSED/);
+    await expect(store.revoke(1, new Date().toISOString())).rejects.toThrow(/ECONNREFUSED/);
   });
 });

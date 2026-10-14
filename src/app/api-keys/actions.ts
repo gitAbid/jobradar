@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { apiKeys } from "@/lib/api/keys-store";
 import { createApiKey, revokeApiKey } from "@/lib/api/keys";
-import { flushBlobOps } from "@/lib/blob-sync";
+import { classifyRemoteError } from "@/db/errors";
 
 export interface CreateKeyState {
   error?: string;
@@ -21,18 +21,13 @@ export async function createApiKeyAction(
 
   try {
     const { key, plaintext } = await createApiKey(apiKeys(), name);
-    try {
-      await flushBlobOps();
-    } catch {
-      // best-effort durability; the key itself is already stored
-    }
     revalidatePath("/api-keys");
     return { name, plaintext, prefix: key.prefix };
   } catch (err) {
     console.error("[jobradar] create API key failed:", err);
     return {
       error:
-        err instanceof Error && /unavailable/i.test(err.message)
+        classifyRemoteError(err) !== "query"
           ? "The database is unreachable — the key was not created. Try again shortly."
           : "Couldn’t create the key — try again shortly.",
     };
@@ -46,11 +41,6 @@ export async function revokeApiKeyAction(formData: FormData): Promise<void> {
     await revokeApiKey(apiKeys(), id);
   } catch (err) {
     console.error("[jobradar] revoke API key failed:", err);
-  }
-  try {
-    await flushBlobOps();
-  } catch {
-    // best-effort
   }
   revalidatePath("/api-keys");
 }

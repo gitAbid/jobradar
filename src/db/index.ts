@@ -1,283 +1,17 @@
 import type { Board, BoardType, Listing, ListingStatus } from "@/lib/types";
 import {
-  classifyRemoteError,
-  isReadStatement,
-  translateToSqlite,
-} from "@/db/translate";
-import {
-  isRemoteConfigured,
   remoteQuery,
   remoteRun,
   remoteRunReturning,
   setRemoteHarness,
   type RemoteHarness,
 } from "@/db/remote";
-import { getBreaker } from "@/db/remote-health";
-import { getLocalStore, type LocalStore } from "@/db/local-store";
-import { drainOutbox, ensureFreshLocal, persistBreakerState } from "@/db/sync";
-import {
-  bufferBlobOps,
-  drainBlobOps,
-  ensureFallbackStore,
-  isBlobServeMode,
-} from "@/lib/blob-sync";
-import type { OutboxOp } from "@/db/outbox";
 
-// ── Local-first query router ───────────────────────────────────────────────
-//
-// Every read/write in the app funnels through q/qOne/run. The routing policy:
-//
-//   reads    → memory cache → on-device SQLite (primary) → remote, with the
-//              mirror refreshed from Neon lazily (initial + 2min catch-up)
-//   writes   → on-device SQLite immediately (authority), then write-through
-//              to Neon; if Neon is unreachable or over limits the statement
-//              is queued in the local outbox and replayed FIFO on recovery
-//
-// A circuit breaker (remote-health.ts) trips on connection/limit failures and
-// re-probes after a backoff window, so a dead or quota-capped database never
-// takes the app down.
+// Every read/write in the app funnels through q/qOne/run, which are thin
+// wrappers over the Neon (postgres.js) helpers in remote.ts. Failures throw;
+// callers classify them with classifyRemoteError (db/errors.ts).
 
 export { getDb } from "@/db/remote";
-export { dbStatus, initBackgroundSync } from "@/db/sync";
-export type { DbStatus } from "@/db/sync";
-
-const MEMORY_TTL_MS = 10_000;
-const MEMORY_MAX_ENTRIES = 300;
-
-interface CacheEntry {
-  at: number;
-  gen: number;
-  rows: Record<string, unknown>[];
-}
-
-declare const globalThis: {
-  __jobradarCache?: Map<string, CacheEntry>;
-  __jobradarCacheGen?: number;
-};
-
-function cache(): Map<string, CacheEntry> {
-  globalThis.__jobradarCache ??= new Map();
-  return globalThis.__jobradarCache;
-}
-
-function cacheGen(): number {
-  globalThis.__jobradarCacheGen ??= 0;
-  return globalThis.__jobradarCacheGen;
-}
-
-function invalidateCache(): void {
-  globalThis.__jobradarCacheGen = cacheGen() + 1;
-  globalThis.__jobradarCache?.clear();
-}
-
-/** Escape hatch: LOCAL_FIRST=0 restores plain remote-direct behavior. */
-export { isLocalFirstEnabled } from "@/db/local-store";
-
-async function localStore(): Promise<LocalStore | null> {
-  return getLocalStore();
-}
-
-// ── Read path ──────────────────────────────────────────────────────────────
-
-async function readRows<T>(
-  query: string,
-  params: unknown[],
-  key: string,
-): Promise<T[]> {
-  const entry = cache().get(key);
-  if (entry && entry.gen === cacheGen() && Date.now() - entry.at < MEMORY_TTL_MS) {
-    return entry.rows as T[];
-  }
-  const remember = (rows: Record<string, unknown>[]): T[] => {
-    cache().set(key, { at: Date.now(), gen: cacheGen(), rows });
-    if (cache().size > MEMORY_MAX_ENTRIES) cache().clear();
-    return rows as T[];
-  };
-
-  const store = await localStore();
-  if (store && !isBlobServeMode()) {
-    // local-first read path (long-lived hosts): mirror → remote hydration
-    await ensureFreshLocal().catch(() => {});
-    try {
-      return remember(store.exec(query, params).rows);
-    } catch (err) {
-      console.error("[jobradar] local read failed, trying remote:", err);
-    }
-  }
-
-  // Remote-first (serverless remote-direct, or Blob serve mode): the remote
-  // is the authority. While the breaker is open we skip the 6 s timeout and
-  // serve from the Blob-seeded fallback straight away.
-  const breaker = getBreaker();
-  if (isBlobServeMode() && !breaker.canAttempt()) {
-    const fallback = await ensureFallbackStore().catch(() => null);
-    if (fallback) {
-      try {
-        return remember(fallback.exec(query, params).rows);
-      } catch (err) {
-        console.error("[jobradar] fallback read failed:", err);
-      }
-    }
-    throw new Error("Database unreachable and no local backup is available");
-  }
-
-  // remote-direct mode (no on-device store) or local read failure
-  try {
-    const rows = await remoteQuery<T>(query, params);
-    getBreaker().recordSuccess();
-    return remember(rows as Record<string, unknown>[]);
-  } catch (err) {
-    const cls = classifyRemoteError(err);
-    if (cls === "query") throw err;
-    getBreaker().recordFailure(err, cls);
-    if (isBlobServeMode()) {
-      const fallback = await ensureFallbackStore().catch(() => null);
-      if (fallback) {
-        try {
-          console.warn("[jobradar] serving read from Blob-backed fallback");
-          return remember(fallback.exec(query, params).rows);
-        } catch (fbErr) {
-          console.error("[jobradar] fallback read failed:", fbErr);
-        }
-      }
-    }
-    throw err;
-  }
-}
-
-// ── Write path ─────────────────────────────────────────────────────────────
-
-/**
- * Statements captured while the remote is down are normalized into
- * replay-safe ops (natural keys instead of local row ids) — see outbox.ts.
- * DDL and the unnest-based seed are remote-internal and never queued.
- */
-async function enqueueForSync(
-  store: LocalStore,
-  query: string,
-  params: unknown[],
-): Promise<OutboxOp | null> {
-  if (/\bunnest\s*\(/i.test(query)) return null;
-  const { toOutboxOp } = await import("@/db/outbox");
-  const op = toOutboxOp(query, params, store);
-  store.enqueue(op.kind === "sql" ? "sql" : "op", op);
-  return op;
-}
-
-async function writeRows(
-  query: string,
-  params: unknown[],
-  wantRows: boolean,
-): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-  const store = await localStore();
-  const translated = translateToSqlite(query, params);
-  let localCount: number | undefined;
-  let localRows: Record<string, unknown>[] | undefined;
-
-  const doLocalWrite = (s: LocalStore): void => {
-    try {
-      const res = s.exec(query, params);
-      localCount = res.changes;
-      localRows = res.rows;
-    } catch (err) {
-      console.error("[jobradar] local write failed:", err);
-    }
-  };
-
-  if (store && !translated.skipLocal && !isBlobServeMode()) {
-    doLocalWrite(store);
-  }
-
-  const settleLocal = (): { rows: Record<string, unknown>[]; count: number } => {
-    invalidateCache();
-    return { rows: localRows ?? [], count: localCount ?? 0 };
-  };
-
-  /**
-   * Blob offline write (serverless only): open the snapshot-seeded fallback,
-   * apply the write, queue it locally and buffer the op for Blob upload so
-   * the mutation survives the instance.
-   */
-  const writeOffline = async (): Promise<{ rows: Record<string, unknown>[]; count: number } | null> => {
-    if (!isBlobServeMode()) return null;
-    const fallback = await ensureFallbackStore().catch(() => null);
-    if (!fallback) return null;
-    if (!translated.skipLocal) doLocalWrite(fallback);
-    const op = await enqueueForSync(fallback, query, params).catch(() => null);
-    if (op) bufferBlobOps(op);
-    return settleLocal();
-  };
-
-  const queueOrBuffer = async (s: LocalStore | null): Promise<void> => {
-    if (s) {
-      const op = await enqueueForSync(s, query, params).catch(() => null);
-      if (op) bufferBlobOps(op);
-    } else {
-      await writeOffline();
-    }
-  };
-
-  if (!isRemoteConfigured()) {
-    if (!store) await writeOffline();
-    return settleLocal();
-  }
-
-  const breaker = getBreaker();
-  if (!breaker.canAttempt()) {
-    if (store) {
-      const op = await enqueueForSync(store, query, params).catch(() => null);
-      if (op) bufferBlobOps(op);
-    } else {
-      await writeOffline();
-    }
-    return settleLocal();
-  }
-
-  try {
-    if (wantRows) {
-      const rows = await remoteRunReturning(query, params);
-      breaker.recordSuccess();
-      invalidateCache();
-      void kickDrain();
-      return { rows, count: rows.length };
-    }
-    const count = await remoteRun(query, params);
-    breaker.recordSuccess();
-    invalidateCache();
-    void kickDrain();
-    return { rows: localRows ?? [], count };
-  } catch (err) {
-    const cls = classifyRemoteError(err);
-    if (cls === "query") {
-      // real SQL/constraint bug — surface it exactly like the direct driver
-      throw err;
-    }
-    breaker.recordFailure(err, cls);
-    console.warn(
-      `[jobradar] remote write failed (${cls}) — queued locally:`,
-      err instanceof Error ? err.message : err,
-    );
-    if (store) {
-      persistBreakerState(store);
-      await queueOrBuffer(store);
-    } else {
-      await writeOffline();
-    }
-    return settleLocal();
-  }
-}
-
-/** After a successful write, opportunistically flush anything still queued. */
-async function kickDrain(): Promise<void> {
-  const store = await localStore();
-  if (store && store.queueDepth() > 0 && getBreaker().status().state === "up") {
-    await drainOutbox(store).catch(() => {});
-  }
-  // Blob backlog rides along (throttled + breaker-gated inside, no-op
-  // without a connected store) — this is the line that fires on serverless,
-  // where there is no local store to gate on.
-  await drainBlobOps().catch(() => {});
-}
 
 // ── Query helpers (the app's entire data surface) ──────────────────────────
 
@@ -335,16 +69,20 @@ export async function attachDescriptions<
   return entries;
 }
 
+/** True for SELECT / WITH statements; everything else is a write. */
+function isReadStatement(query: string): boolean {
+  return /^\s*(select|with)\b/i.test(query);
+}
+
 /** Run a query and return all rows. */
 export async function q<T = Record<string, unknown>>(
   query: string,
   params: unknown[] = [],
 ): Promise<T[]> {
-  if (isReadStatement(query)) {
-    return readRows<T>(query, params, `${query}\u0000${JSON.stringify(params)}`);
-  }
-  const { rows } = await writeRows(query, params, /\breturning\b/i.test(query));
-  return rows as T[];
+  if (isReadStatement(query)) return remoteQuery<T>(query, params);
+  if (/\breturning\b/i.test(query)) return remoteRunReturning<T>(query, params);
+  await remoteRun(query, params);
+  return [];
 }
 
 /** Run a query and return the first row, if any. */
@@ -359,8 +97,7 @@ export async function qOne<T = Record<string, unknown>>(
 /** Run a mutating query; returns the number of affected rows. */
 export async function run(query: string, params: unknown[] = []): Promise<number> {
   if (isReadStatement(query)) return (await q(query, params)).length;
-  const { count } = await writeRows(query, params, false);
-  return count;
+  return remoteRun(query, params);
 }
 
 // ── Cross-cutting helpers ──────────────────────────────────────────────────
@@ -625,15 +362,3 @@ function safeParse(json: string): string[] {
 
 export { setRemoteHarness };
 export type { RemoteHarness };
-
-/** Wipe all local-first state (store, breaker, cache) between tests. */
-export async function resetLocalFirstForTests(): Promise<void> {
-  const { closeLocalStoreForTests } = await import("@/db/local-store");
-  const { resetBreakerForTests } = await import("@/db/remote-health");
-  const { resetSyncStateForTests } = await import("@/db/sync");
-  closeLocalStoreForTests();
-  resetBreakerForTests();
-  resetSyncStateForTests();
-  globalThis.__jobradarCache = undefined;
-  globalThis.__jobradarCacheGen = undefined;
-}

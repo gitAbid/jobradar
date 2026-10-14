@@ -3,7 +3,6 @@
 import { z } from "zod";
 import { revalidatePath, updateTag } from "next/cache";
 import { qOne, rowToBoard, run } from "@/db";
-import { flushBlobOps } from "@/lib/blob-sync";
 import { setGlobalKeywords, setSetting } from "@/lib/settings";
 import { refreshBoard } from "@/lib/refresh";
 
@@ -32,17 +31,8 @@ function revalidateAll() {
   updateTag("listings");
 }
 
-/**
- * Durably buffer this request's mutations to Blob (no-op without a
- * connected store) before revalidating, so a serverless instance dying
- * right after the response can't take the writes with it.
- */
-async function commit() {
-  try {
-    await flushBlobOps();
-  } catch {
-    // buffering is best-effort; the request's own writes already landed
-  }
+/** Writes already landed in Neon; just refresh the cached views. */
+function commit() {
   revalidateAll();
 }
 
@@ -204,11 +194,6 @@ export async function togglePinCountryAction(formData: FormData): Promise<void> 
     ]);
   }
   // layout renders the pinned-country nav on every route
-  try {
-    await flushBlobOps();
-  } catch {
-    // best-effort (see commit)
-  }
   revalidatePath("/", "layout");
 }
 

@@ -250,7 +250,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test.
 
-## P2.3 Remove local-first layer  [ ]   model: sonnet   depends: P2.0c
+## P2.3 Remove local-first layer  [x]   model: sonnet   depends: P2.0c
 **Goal:** a single Neon data path.
 
 **Files:**
@@ -271,6 +271,7 @@ Sources: `node_modules/next/dist/docs/` only.
 - `grep` finds no references to the deleted modules.
 - All remaining tests pass. Adapt `tests/api-jobs.test.ts` and `tests/api-keys-store.test.ts` to the harness.
 - A DB failure throws, so the error boundary from P5.4 handles it.
+- **Verified on staging (`next start`): all 6 pages 200, `/api/v1/jobs` 401 without touching the DB, favorite action persisted and the cached `?status=favorite` feed showed it at once. Follow-up for P6.1: `docs/local-first-db.md` is now stale.**
 
 **Gates:** tsc, lint, test, build.
 
