@@ -154,7 +154,7 @@ let KEY: string;
 
 beforeEach(async () => {
   store = new InMemoryKeyStore();
-  KEY = (await createApiKey(store, "tests")).plaintext;
+  KEY = (await createApiKey(store, "tests", "00000000-0000-4000-8000-00000000000a")).plaintext;
 });
 
 function req(path = "/api/v1/jobs", withKey = true): Request {
@@ -211,8 +211,8 @@ describe("jobsListResponse", () => {
   });
 
   it("403s a revoked key", async () => {
-    const { plaintext, key } = await createApiKey(store, "shortlived");
-    await store.revoke(key.id, new Date().toISOString());
+    const { plaintext, key } = await createApiKey(store, "shortlived", "00000000-0000-4000-8000-00000000000a");
+    await store.revoke(key.id, "00000000-0000-4000-8000-00000000000a", new Date().toISOString());
     const res = await jobsListResponse(
       new Request("https://jobradar.local/api/v1/jobs", {
         headers: { authorization: `Bearer ${plaintext}` },

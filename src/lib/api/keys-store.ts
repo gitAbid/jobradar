@@ -10,6 +10,7 @@ interface ApiKeyRow {
   id: number;
   name: string;
   key_hash?: string;
+  user_id: string | null;
   prefix: string;
   created_at: Date | string;
   last_used_at: Date | string | null;
@@ -26,6 +27,7 @@ function iso(v: Date | string | null): string | null {
 function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
   return {
     id: Number(r.id),
+    userId: r.user_id ?? null,
     name: r.name,
     prefix: r.prefix,
     createdAt: iso(r.created_at) ?? "",
@@ -41,24 +43,28 @@ class NeonKeyStore implements KeyStore {
     keyHash: string;
     prefix: string;
     createdAt: string;
+    userId: string;
   }): Promise<number> {
     const rows = await remoteRunReturning<{ id: number }>(
-      "insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4::timestamptz) returning id",
-      [key.name, key.keyHash, key.prefix, key.createdAt],
+      "insert into api_keys (name, key_hash, prefix, created_at, user_id) values ($1, $2, $3, $4::timestamptz, $5::uuid) returning id",
+      [key.name, key.keyHash, key.prefix, key.createdAt, key.userId],
     );
     if (!rows[0]) throw new Error("api_keys insert returned no id");
     return Number(rows[0].id);
   }
 
-  async list(): Promise<ApiKeyRecord[]> {
-    const rows = await remoteQuery<ApiKeyRow>("select * from api_keys order by id desc");
+  async list(userId: string): Promise<ApiKeyRecord[]> {
+    const rows = await remoteQuery<ApiKeyRow>(
+      "select * from api_keys where user_id = $1::uuid order by id desc",
+      [userId],
+    );
     return rows.map(rowToRecord);
   }
 
-  async revoke(id: number, revokedAt: string): Promise<boolean> {
+  async revoke(id: number, userId: string, revokedAt: string): Promise<boolean> {
     const count = await remoteRun(
-      "update api_keys set revoked_at = $1::timestamptz where id = $2 and revoked_at is null",
-      [revokedAt, id],
+      "update api_keys set revoked_at = $1::timestamptz where id = $2 and user_id = $3::uuid and revoked_at is null",
+      [revokedAt, id, userId],
     );
     return count > 0;
   }
@@ -75,6 +81,23 @@ class NeonKeyStore implements KeyStore {
       "update api_keys set last_used_at = $1::timestamptz, request_count = request_count + 1 where id = $2",
       [usedAt, id],
     );
+  }
+
+  async hitRate(keyId: number): Promise<{ count: number; retryAfterSeconds: number }> {
+    const rows = await remoteRunReturning<{ count: number; retry: number }>(
+      `insert into api_rate (key_id, window_start, count)
+         values ($1::int, date_trunc('hour', now()), 1)
+       on conflict (key_id, window_start) do update set count = api_rate.count + 1
+       returning count,
+         ceil(extract(epoch from (window_start + interval '1 hour' - now())))::int as retry`,
+      [keyId],
+    );
+    if (!rows[0]) throw new Error("api_rate upsert returned no row");
+    // Opportunistic cleanup of old windows; best-effort, never blocks the request.
+    if (Math.random() < 0.01) {
+      remoteRun("delete from api_rate where window_start < now() - interval '1 day'").catch(() => {});
+    }
+    return { count: Number(rows[0].count), retryAfterSeconds: Math.max(1, Number(rows[0].retry)) };
   }
 }
 

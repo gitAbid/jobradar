@@ -364,7 +364,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test, build.
 
-## P3.5 Per-user API keys + rate limit  [ ]   model: sonnet   depends: P3.4
+## P3.5 Per-user API keys + rate limit  [x]   model: sonnet   depends: P3.4
 **Files:** `src/lib/api/keys.ts`, `src/lib/api/keys-store.ts`, `src/lib/api/jobs.ts`, `db/migrations/006_rate_limit.sql`, tests.
 
 **Acceptance:**
@@ -374,7 +374,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Gates:** tsc, lint, test.
 
-## P3.6 Expiry + admin-only refresh routes  [ ]   model: sonnet   depends: P3.4
+## P3.6 Expiry + admin-only refresh routes  [x]   model: sonnet   depends: P3.4
 **Files:** `src/lib/refresh.ts` (`expireOldListings`), `src/app/api/refresh/route.ts`, `src/app/api/refresh/status/route.ts`, tests.
 
 **Acceptance:**

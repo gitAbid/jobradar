@@ -10,6 +10,7 @@ import {
   type KeyStore,
 } from "@/lib/api/keys";
 
+const OWNER = "00000000-0000-4000-8000-00000000000a";
 let store: KeyStore;
 beforeEach(() => {
   store = new InMemoryKeyStore();
@@ -25,7 +26,7 @@ describe("hashKey", () => {
 
 describe("createApiKey", () => {
   it("stores only a hash and returns the plaintext once", async () => {
-    const { key, plaintext } = await createApiKey(store, "my-app");
+    const { key, plaintext } = await createApiKey(store, "my-app", OWNER);
 
     expect(plaintext).toMatch(/^jrk_[A-Za-z0-9_-]{43}$/);
     expect(key.name).toBe("my-app");
@@ -34,7 +35,7 @@ describe("createApiKey", () => {
     expect(key.lastUsedAt).toBeNull();
     expect(key.requestCount).toBe(0);
 
-    const listed = await listApiKeys(store);
+    const listed = await listApiKeys(store, OWNER);
     expect(listed).toHaveLength(1);
     expect(listed[0].name).toBe("my-app");
     // the plaintext is nowhere in the stored record
@@ -42,25 +43,25 @@ describe("createApiKey", () => {
   });
 
   it("generates unique plaintexts", async () => {
-    const a = await createApiKey(store, "a");
-    const b = await createApiKey(store, "b");
+    const a = await createApiKey(store, "a", OWNER);
+    const b = await createApiKey(store, "b", OWNER);
     expect(a.plaintext).not.toBe(b.plaintext);
   });
 });
 
 describe("listApiKeys / revokeApiKey", () => {
   it("lists newest first and records revocation", async () => {
-    const a = await createApiKey(store, "a");
-    const b = await createApiKey(store, "b");
+    const a = await createApiKey(store, "a", OWNER);
+    const b = await createApiKey(store, "b", OWNER);
 
-    expect((await listApiKeys(store)).map((k) => k.id)).toEqual([b.key.id, a.key.id]);
+    expect((await listApiKeys(store, OWNER)).map((k) => k.id)).toEqual([b.key.id, a.key.id]);
 
-    expect(await revokeApiKey(store, a.key.id)).toBe(true);
-    const revoked = (await listApiKeys(store)).find((k) => k.id === a.key.id);
+    expect(await revokeApiKey(store, a.key.id, OWNER)).toBe(true);
+    const revoked = (await listApiKeys(store, OWNER)).find((k) => k.id === a.key.id);
     expect(revoked?.revokedAt).not.toBeNull();
 
-    expect(await revokeApiKey(store, a.key.id)).toBe(false); // already revoked
-    expect(await revokeApiKey(store, 9999)).toBe(false); // unknown
+    expect(await revokeApiKey(store, a.key.id, OWNER)).toBe(false); // already revoked
+    expect(await revokeApiKey(store, 9999, OWNER)).toBe(false); // unknown
   });
 });
 
@@ -86,35 +87,35 @@ describe("authenticateApiKey", () => {
   });
 
   it("accepts a valid Bearer key and records usage", async () => {
-    const { plaintext, key } = await createApiKey(store, "app");
+    const { plaintext, key } = await createApiKey(store, "app", OWNER);
     const res = await authenticateApiKey(authRequest(plaintext), store);
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.key.id).toBe(key.id);
 
-    const [row] = await listApiKeys(store);
+    const [row] = await listApiKeys(store, OWNER);
     expect(row.requestCount).toBe(1);
     expect(row.lastUsedAt).not.toBeNull();
   });
 
   it("accepts x-api-key as an alternative header", async () => {
-    const { plaintext } = await createApiKey(store, "app");
+    const { plaintext } = await createApiKey(store, "app", OWNER);
     expect((await authenticateApiKey(authRequest(plaintext, "x-api-key"), store)).ok).toBe(true);
   });
 
   it("throttles usage writes to once per 60s window", async () => {
-    const { plaintext, key } = await createApiKey(store, "app");
+    const { plaintext, key } = await createApiKey(store, "app", OWNER);
     await authenticateApiKey(authRequest(plaintext), store);
     await authenticateApiKey(authRequest(plaintext), store);
-    const [row] = await listApiKeys(store);
+    const [row] = await listApiKeys(store, OWNER);
     expect(row.requestCount).toBe(1);
     expect(row.id).toBe(key.id);
   });
 
   it("403s a revoked key", async () => {
-    const { plaintext } = await createApiKey(store, "app");
+    const { plaintext } = await createApiKey(store, "app", OWNER);
     const first = await authenticateApiKey(authRequest(plaintext), store);
     if (!first.ok) throw new Error("expected first auth to succeed");
-    await revokeApiKey(store, first.key.id);
+    await revokeApiKey(store, first.key.id, OWNER);
     expect(await authenticateApiKey(authRequest(plaintext), store)).toEqual({
       ok: false,
       status: 403,

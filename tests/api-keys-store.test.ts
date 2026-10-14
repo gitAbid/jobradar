@@ -5,6 +5,7 @@ import { classifyRemoteError } from "@/db/errors";
 import { hashKey } from "@/lib/api/keys";
 import { apiKeys } from "@/lib/api/keys-store";
 
+const OWNER = "00000000-0000-4000-8000-00000000000a";
 const CONN_FAIL = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
   code: "ECONNREFUSED",
 });
@@ -130,10 +131,11 @@ describe("NeonKeyStore", () => {
       keyHash: hashKey("jrk_test_1"),
       prefix: "jrk_test_1".slice(0, 12),
       createdAt: new Date().toISOString(),
+      userId: OWNER,
     });
     expect(id).toBe(100); // the REMOTE id, not a local autoincrement id
 
-    const listed = await store.list();
+    const listed = await store.list(OWNER);
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({ id: 100, name: "my-app" });
   });
@@ -148,6 +150,7 @@ describe("NeonKeyStore", () => {
       keyHash: hashKey("jrk_secret"),
       prefix: "jrk_secret",
       createdAt: new Date().toISOString(),
+      userId: OWNER,
     });
     const found = await store.findByHash(hashKey("jrk_secret"));
     expect(found?.name).toBe("app");
@@ -164,12 +167,13 @@ describe("NeonKeyStore", () => {
       keyHash: hashKey("jrk_revoke_me"),
       prefix: "jrk_revoke_",
       createdAt: new Date().toISOString(),
+      userId: OWNER,
     });
-    expect(await store.revoke(id, new Date().toISOString())).toBe(true);
-    expect(await store.revoke(id, new Date().toISOString())).toBe(false);
-    expect(await store.revoke(9999, new Date().toISOString())).toBe(false);
+    expect(await store.revoke(id, OWNER, new Date().toISOString())).toBe(true);
+    expect(await store.revoke(id, OWNER, new Date().toISOString())).toBe(false);
+    expect(await store.revoke(9999, OWNER, new Date().toISOString())).toBe(false);
 
-    const listed = await store.list();
+    const listed = await store.list(OWNER);
     expect(listed[0].revokedAt).not.toBeNull();
   });
 });
@@ -185,13 +189,14 @@ describe("NeonKeyStore (remote down)", () => {
         keyHash: hashKey("jrk_offline"),
         prefix: "jrk_offline",
         createdAt: new Date().toISOString(),
+        userId: OWNER,
       })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect(classifyRemoteError(err)).toBe("connection");
 
-    await expect(store.list()).rejects.toThrow(/ECONNREFUSED/);
+    await expect(store.list(OWNER)).rejects.toThrow(/ECONNREFUSED/);
     await expect(store.findByHash(hashKey("x"))).rejects.toThrow(/ECONNREFUSED/);
-    await expect(store.revoke(1, new Date().toISOString())).rejects.toThrow(/ECONNREFUSED/);
+    await expect(store.revoke(1, OWNER, new Date().toISOString())).rejects.toThrow(/ECONNREFUSED/);
   });
 });

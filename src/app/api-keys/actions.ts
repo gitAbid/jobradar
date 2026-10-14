@@ -17,8 +17,9 @@ export async function createApiKeyAction(
   _prev: CreateKeyState,
   formData: FormData,
 ): Promise<CreateKeyState> {
+  let user;
   try {
-    await requireUser();
+    user = await requireUser();
   } catch (err) {
     if (err instanceof AuthError) {
       return { error: err.status === 401 ? "Sign in to create API keys." : "Not allowed." };
@@ -29,7 +30,7 @@ export async function createApiKeyAction(
   if (!name) return { error: "Give the key a name — which app uses it?" };
 
   try {
-    const { key, plaintext } = await createApiKey(apiKeys(), name);
+    const { key, plaintext } = await createApiKey(apiKeys(), name, user.id);
     revalidatePath("/api-keys");
     return { name, plaintext, prefix: key.prefix };
   } catch (err) {
@@ -44,8 +45,9 @@ export async function createApiKeyAction(
 }
 
 export async function revokeApiKeyAction(formData: FormData): Promise<void> {
+  let user;
   try {
-    await requireUser();
+    user = await requireUser();
   } catch (err) {
     if (err instanceof AuthError) return;
     throw err;
@@ -53,7 +55,7 @@ export async function revokeApiKeyAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return;
   try {
-    await revokeApiKey(apiKeys(), id);
+    await revokeApiKey(apiKeys(), id, user.id);
   } catch (err) {
     console.error("[jobradar] revoke API key failed:", err);
   }

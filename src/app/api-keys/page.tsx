@@ -10,8 +10,8 @@ export const metadata = { title: "API Keys · JobRadar" };
 
 export default async function ApiKeysPage() {
   await connection(); // DB reads must not be prerendered
-  await requirePageUser();
-  const keys = await listApiKeys(apiKeys());
+  const user = await requirePageUser();
+  const keys = await listApiKeys(apiKeys(), user.id);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">

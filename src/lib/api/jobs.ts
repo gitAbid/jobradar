@@ -3,7 +3,8 @@ import { authenticateApiKey, type KeyStore } from "@/lib/api/keys";
 import { parseJobsQuery } from "@/lib/api/query";
 import { toPublicJob } from "@/lib/api/serialize";
 import { loadJobView, type JobView, type RawParams } from "@/lib/job-view";
-import { getCachedListingById } from "@/lib/job-query";
+import { fetchListingById, fetchUserListingState } from "@/lib/job-query";
+import { remoteQuery } from "@/db/remote";
 import type { FilterableListing } from "@/lib/types";
 
 // ── Shared response plumbing ────────────────────────────────────────────────
@@ -27,7 +28,18 @@ export function corsPreflight(): Response {
   return new Response(null, { status: 204, headers: API_HEADERS });
 }
 
-async function requireAuth(request: Request, store: KeyStore): Promise<Response | null> {
+const DEFAULT_RATE_LIMIT_PER_HOUR = 600;
+
+function rateLimit(): number {
+  const n = Number.parseInt(process.env.API_RATE_LIMIT_PER_HOUR ?? "", 10);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_RATE_LIMIT_PER_HOUR;
+}
+
+/** Authenticates then rate-limits; resolves the owner's id or the error response. */
+async function requireAuth(
+  request: Request,
+  store: KeyStore,
+): Promise<{ userId: string } | { denied: Response }> {
   let auth;
   try {
     auth = await authenticateApiKey(request, store);
@@ -39,10 +51,30 @@ async function requireAuth(request: Request, store: KeyStore): Promise<Response 
       "[jobradar] v1 api: key verification unavailable:",
       err instanceof Error ? err.message : err,
     );
-    return apiError(503, "unavailable");
+    return { denied: apiError(503, "unavailable") };
   }
-  if (auth.ok) return null;
-  return apiError(auth.status, auth.status === 403 ? "revoked" : "unauthorized");
+  if (auth.ok) {
+    try {
+      const { count, retryAfterSeconds } = await store.hitRate(auth.key.id);
+      if (count > rateLimit()) {
+        return {
+          denied: Response.json(
+            { error: "rate_limited" },
+            { status: 429, headers: { ...API_HEADERS, "Retry-After": String(retryAfterSeconds) } },
+          ),
+        };
+      }
+    } catch (err) {
+      // Fail closed on any rate-store error.
+      console.error(
+        "[jobradar] v1 api: rate limit unavailable:",
+        err instanceof Error ? err.message : err,
+      );
+      return { denied: apiError(503, "unavailable") };
+    }
+    return { userId: auth.userId };
+  }
+  return { denied: apiError(auth.status, auth.status === 403 ? "revoked" : "unauthorized") };
 }
 
 /**
@@ -55,24 +87,31 @@ export interface FeedSource {
   byId(id: number): Promise<FilterableListing | null>;
 }
 
-export const sqlFeedSource: FeedSource = {
-  view: (params, opts) => loadJobView(null, params, [], { pageSize: opts.pageSize }),
-  byId: (id) => getCachedListingById(id),
-};
+/** Feed bound to one user: their hidden/status/tags apply. */
+export function sqlFeedSource(userId: string): FeedSource {
+  return {
+    view: (params, opts) => loadJobView(userId, params, [], { pageSize: opts.pageSize }),
+    byId: async (id) => {
+      const listing = await fetchListingById(remoteQuery, id);
+      if (!listing) return null;
+      return { ...listing, ...(await fetchUserListingState(remoteQuery, userId, id)) };
+    },
+  };
+}
 
 export type FeedResult =
   | { ok: true; feed: FeedSource }
   | { ok: false; error: Response };
 
-/** Lazily resolves the feed; only invoked after the request authenticated. */
-export type FeedLoader = () => Promise<FeedResult>;
+/** Lazily resolves the feed for the key's owner; only invoked after auth + rate limit. */
+export type FeedLoader = (userId: string) => Promise<FeedResult>;
 
 /**
  * Route-level feed loader. Errors from the DB surface per call (see
  * `guardFeed`), so this only hands out the SQL-backed source.
  */
-export async function loadFeedSafe(): Promise<FeedResult> {
-  return { ok: true, feed: guardFeed(sqlFeedSource) };
+export async function loadFeedSafe(userId: string): Promise<FeedResult> {
+  return { ok: true, feed: guardFeed(sqlFeedSource(userId)) };
 }
 
 /**
@@ -112,13 +151,13 @@ export async function jobsListResponse(
   store: KeyStore,
   loadFeed: FeedLoader,
 ): Promise<Response> {
-  const denied = await requireAuth(request, store);
-  if (denied) return denied;
+  const authed = await requireAuth(request, store);
+  if ("denied" in authed) return authed.denied;
 
   const parsed = parseJobsQuery(request.url);
   if (!parsed.ok) return apiError(400, "invalid_params", parsed.error);
 
-  const loaded = await loadFeed();
+  const loaded = await loadFeed(authed.userId);
   if (!loaded.ok) return loaded.error;
   let view: JobView;
   try {
@@ -148,10 +187,10 @@ export async function jobDetailResponse(
   idParam: string,
   loadFeed: FeedLoader,
 ): Promise<Response> {
-  const denied = await requireAuth(request, store);
-  if (denied) return denied;
+  const authed = await requireAuth(request, store);
+  if ("denied" in authed) return authed.denied;
 
-  const loaded = await loadFeed();
+  const loaded = await loadFeed(authed.userId);
   if (!loaded.ok) return loaded.error;
   const id = Number.parseInt(idParam, 10);
   // postgres int4 range; anything else cannot exist
@@ -178,10 +217,10 @@ export async function metaResponse(
   store: KeyStore,
   loadFeed: FeedLoader,
 ): Promise<Response> {
-  const denied = await requireAuth(request, store);
-  if (denied) return denied;
+  const authed = await requireAuth(request, store);
+  if ("denied" in authed) return authed.denied;
 
-  const loaded = await loadFeed();
+  const loaded = await loadFeed(authed.userId);
   if (!loaded.ok) return loaded.error;
   // No selections → facet counts over the whole non-hidden pool.
   let view: JobView;
