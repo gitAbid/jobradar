@@ -80,7 +80,10 @@ export default function RootLayout({
             <RefreshStatus />
           </Suspense>
         </header>
-        <main id="main-content" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+        <main id="main-content" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+          {/* pages read the DB at request time (connection()); stream them under the static shell */}
+          <Suspense fallback={null}>{children}</Suspense>
+        </main>
       </body>
     </html>
   );

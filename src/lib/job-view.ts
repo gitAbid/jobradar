@@ -1,7 +1,6 @@
 import { matchedKeywords, matchesKeywords } from "@/lib/filters";
 import { computeFacet, countryFacetValue, topValues } from "@/lib/facets";
-import { remoteQuery } from "@/db/remote";
-import { runJobQuery } from "@/lib/job-query";
+import { getCachedJobView, normaliseParams } from "@/lib/job-query";
 import type { FilterableListing } from "@/lib/types";
 
 /**
@@ -214,12 +213,11 @@ export async function loadJobView(
   globalKeywords: string[],
   opts: { pageSize?: number; bd?: boolean; facetLimit?: number } = {},
 ): Promise<JobView> {
-  const view = await runJobQuery(
-    (text, values) => remoteQuery(text, values),
-    sp,
-    globalKeywords,
-    { pageSize: opts.pageSize ?? PAGE_SIZE, bd: opts.bd, facetLimit: opts.facetLimit },
-  );
+  const view = await getCachedJobView(normaliseParams(sp), globalKeywords, {
+    pageSize: opts.pageSize ?? PAGE_SIZE,
+    ...(opts.bd ? { bd: true } : {}),
+    ...(opts.facetLimit !== undefined ? { facetLimit: opts.facetLimit } : {}),
+  });
   if (process.env.NODE_ENV !== "production") {
     console.log(`[jobradar] feed page: ${JSON.stringify(view).length} bytes`);
   }

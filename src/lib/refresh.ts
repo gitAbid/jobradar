@@ -65,6 +65,24 @@ async function executeRun(boards: Board[]): Promise<RefreshSummary> {
     };
   } finally {
     await finishTrackedRun();
+    // precompute country for new rows so the feed query skips its CASE
+    try {
+      const [{ backfillCountries }, { remoteQuery }] = await Promise.all([
+        import("@/lib/country-backfill"),
+        import("@/db/remote"),
+      ]);
+      await backfillCountries((text, values) => remoteQuery(text, values));
+    } catch (err) {
+      console.error("[jobradar] country backfill failed:", err);
+    }
+    // shared listings cache: serve stale-while-revalidate until next read.
+    // Runs inside after() (not a documented request scope) so never throw.
+    try {
+      const { revalidateTag } = await import("next/cache");
+      revalidateTag("listings", "max");
+    } catch (err) {
+      console.error("[jobradar] revalidateTag(listings) failed:", err);
+    }
     // durably buffer any ops captured while Neon was unreachable (no-op
     // without a Blob store; request-scoped callers also flush via after())
     try {

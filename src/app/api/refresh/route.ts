@@ -3,8 +3,6 @@ import { after } from "next/server";
 import { startRefreshRun } from "@/lib/refresh";
 import { getRun } from "@/lib/refresh-run";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /** Reject cross-site browser form/fetch posts (public URL, personal app). */

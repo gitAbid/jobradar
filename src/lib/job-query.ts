@@ -1,3 +1,5 @@
+import { cacheLife, cacheTag } from "next/cache";
+import { remoteQuery } from "@/db/remote";
 import { COUNTRY_FACETS, topValues } from "@/lib/facets";
 import { BD_LOCATION_RE } from "@/lib/bd";
 import { matchedKeywords } from "@/lib/filters";
@@ -239,7 +241,7 @@ function build(
       b.name as board_name, b.filter_keywords as board_filter_keywords,
       coalesce(l.posted_at, l.fetched_at) as sort_at,
       lower(l.company || '|' || l.title) as dk,
-      ${countryCaseSql()} as country,
+      coalesce(l.country, ${countryCaseSql()}) as country,
       (l.title || ' ' || l.company || ' ' || l.location || ' ' ||
         array_to_string(array(select jsonb_array_elements_text(l.tags::jsonb)), ' ')) as hay
     from listings l join boards b on b.id = l.board_id
@@ -455,4 +457,59 @@ export async function fetchListingById(
     [id],
   );
   return rows[0] ? rowToFeedListing(rows[0]) : null;
+}
+
+// ── Shared cache (Next 16 Cache Components) ────────────────────────────────
+
+const PARAM_KEYS = [
+  "status", "remote", "visa", "showAll", "q", "skill", "country", "company", "source", "page",
+] as const;
+
+/**
+ * Whitelist + canonicalise filter params so the cache key is built from
+ * serializable, known keys only (searchParams may carry junk or a
+ * null-prototype object).
+ */
+export function normaliseParams(sp: RawParams): RawParams {
+  const out: Record<string, string | string[]> = {};
+  for (const k of PARAM_KEYS) {
+    const v = sp[k];
+    if (v === undefined || v === "") continue;
+    out[k] = Array.isArray(v) ? [...v] : v;
+  }
+  return out as RawParams;
+}
+
+/** Backstop only: the `listings` tag is the primary freshness signal. */
+const LISTINGS_LIFE = { stale: 60, revalidate: 15 * 60, expire: 24 * 60 * 60 };
+
+/** Counts the listings SQL that actually reaches Neon (cache misses). */
+function loggedRemote(label: string): SqlExec {
+  if (process.env.NODE_ENV !== "production" || process.env.JOBRADAR_LOG_SQL === "1") {
+    console.log(`[jobradar] feed SQL (${label})`);
+  }
+  return (text, values) => remoteQuery(text, values);
+}
+
+/**
+ * Shared feed page + facets, cached across requests under the `listings`
+ * tag. Arguments are the cache key: only shared dimensions go in (filters,
+ * global keywords, opts). Per-user data (follows, pins) stays with callers.
+ */
+export async function getCachedJobView(
+  sp: RawParams,
+  globalKeywords: string[],
+  opts: JobQueryOpts,
+): Promise<JobView> {
+  "use cache: remote";
+  cacheLife(LISTINGS_LIFE);
+  cacheTag("listings");
+  return runJobQuery(loggedRemote("page"), sp, globalKeywords, opts);
+}
+
+export async function getCachedListingById(id: number): Promise<FilterableListing | null> {
+  "use cache: remote";
+  cacheLife(LISTINGS_LIFE);
+  cacheTag("listings");
+  return fetchListingById(loggedRemote("by-id"), id);
 }

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { blobStatus, drainBlobOps, uploadSnapshot } from "@/lib/blob-sync";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**

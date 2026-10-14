@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { qOne, rowToBoard, run } from "@/db";
 import { flushBlobOps } from "@/lib/blob-sync";
 import { setGlobalKeywords, setSetting } from "@/lib/settings";
@@ -28,6 +28,8 @@ function revalidateAll() {
   revalidatePath("/boards");
   revalidatePath("/applied");
   revalidatePath("/following");
+  // listings, boards and status all feed the shared cache
+  updateTag("listings");
 }
 
 /**

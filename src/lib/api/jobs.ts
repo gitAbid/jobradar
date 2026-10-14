@@ -1,10 +1,9 @@
-import { remoteQuery } from "@/db/remote";
 import { classifyRemoteError } from "@/db/translate";
 import { authenticateApiKey, type KeyStore } from "@/lib/api/keys";
 import { parseJobsQuery } from "@/lib/api/query";
 import { toPublicJob } from "@/lib/api/serialize";
 import { loadJobView, type JobView, type RawParams } from "@/lib/job-view";
-import { fetchListingById } from "@/lib/job-query";
+import { getCachedListingById } from "@/lib/job-query";
 import type { FilterableListing } from "@/lib/types";
 
 // ── Shared response plumbing ────────────────────────────────────────────────
@@ -58,7 +57,7 @@ export interface FeedSource {
 
 export const sqlFeedSource: FeedSource = {
   view: (params, opts) => loadJobView(params, [], { pageSize: opts.pageSize }),
-  byId: (id) => fetchListingById((text, values) => remoteQuery(text, values), id),
+  byId: (id) => getCachedListingById(id),
 };
 
 export type FeedResult =

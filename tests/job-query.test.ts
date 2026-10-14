@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { COUNTRY_FACETS } from "@/lib/facets";
+import { COUNTRY_FACETS, countryFacetValue } from "@/lib/facets";
 import { BD_LOCATION_RE, isBangladeshRelevant } from "@/lib/bd";
 import { buildJobView, type RawParams } from "@/lib/job-view";
 import {
@@ -89,7 +89,7 @@ function toListing(f: Fx): FilterableListing {
 
 beforeAll(async () => {
   db = new PGlite();
-  for (const file of ["001_baseline.sql", "002_feed_index.sql"]) {
+  for (const file of ["001_baseline.sql", "002_feed_index.sql", "003_country.sql"]) {
     await db.exec(readFileSync(join(process.cwd(), "db/migrations", file), "utf8"));
   }
   for (const b of BOARDS) {
@@ -272,5 +272,36 @@ describe("SQL feed parity with buildJobView", () => {
   it("one page of 20 rows stays small", async () => {
     const got = await runJobQuery(exec, {}, [], { pageSize: 20 });
     expect(JSON.stringify(got).length).toBeLessThan(50_000);
+  });
+});
+
+import { normaliseParams } from "@/lib/job-query";
+
+describe("normaliseParams (cache key)", () => {
+  it("keeps only known, non-empty params", () => {
+    const sp = Object.assign(Object.create(null), {
+      q: "java", skill: ["a", "b"], junk: "x", status: "", page: "2",
+    });
+    expect(normaliseParams(sp)).toEqual({ q: "java", skill: ["a", "b"], page: "2" });
+  });
+});
+
+import { backfillCountries } from "@/lib/country-backfill";
+
+describe("country backfill", () => {
+  it("fills country in batches, then feed results still match the oracle", async () => {
+    const total = FIXTURES.length;
+    expect(await backfillCountries(exec, 2)).toBe(total);
+    expect(await backfillCountries(exec, 2)).toBe(0);
+    const rows = await exec("select id, country from listings order by id", []);
+    for (const f of FIXTURES) {
+      const l = toListing(f);
+      const want = countryFacetValue({ location: l.location, isRemote: l.isRemote, remoteScope: l.remoteScope });
+      expect(rows.find((r) => Number(r.id) === f.id)?.country, String(f.id)).toBe(want);
+    }
+    // country now precomputed for every row: parity unchanged
+    await expectParity({});
+    await expectParity({ country: ["Germany", "Other"] });
+    await expectParity({ country: ["Bangladesh"] }, KW, { bd: true });
   });
 });

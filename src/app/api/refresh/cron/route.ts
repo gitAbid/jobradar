@@ -3,8 +3,6 @@ import { after } from "next/server";
 import { startRefreshRun } from "@/lib/refresh";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**

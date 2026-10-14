@@ -29,6 +29,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // 'use cache' for the shared listings pool (see src/lib/job-query.ts)
+  cacheComponents: true,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
