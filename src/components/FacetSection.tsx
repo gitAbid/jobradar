@@ -52,16 +52,16 @@ export function FacetSection({
         >
           <ChevronDown
             aria-hidden="true"
-            className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${
+            className={`h-3.5 w-3.5 shrink-0 text-faint transition-transform ${
               open ? "" : "-rotate-90"
             }`}
           />
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">
             {title}
           </span>
-          <span className="text-[11px] text-slate-400">{values.length}</span>
+          <span className="text-[11px] text-faint">{values.length}</span>
           {selected.length > 0 && (
-            <span className="rounded-full bg-teal-100 px-1.5 text-[11px] font-semibold text-teal-700">
+            <span className="rounded-full bg-teal-soft2 px-1.5 text-[11px] font-semibold text-teal-ink">
               {selected.length}
             </span>
           )}
@@ -70,7 +70,7 @@ export function FacetSection({
           <button
             type="button"
             onClick={() => onClearParam(param)}
-            className="rounded-md px-1.5 py-1 pointer-coarse:min-h-11 pointer-coarse:px-3 text-[11px] normal-case text-teal-700 hover:bg-teal-50 hover:text-teal-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="rounded-md px-1.5 py-1 pointer-coarse:min-h-11 pointer-coarse:px-3 text-[11px] normal-case text-teal-ink hover:bg-teal-soft hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
             title={`Clear ${title} filters`}
           >
             clear
@@ -88,8 +88,8 @@ export function FacetSection({
                 <label
                   className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 pointer-coarse:min-h-11 text-sm transition ${
                     active
-                      ? "bg-emerald-50 font-medium text-emerald-800"
-                      : "text-slate-600 hover:bg-slate-50"
+                      ? "bg-emerald-soft font-medium text-emerald-ink"
+                      : "text-muted hover:bg-surface"
                   }`}
                 >
                   <input
@@ -101,7 +101,7 @@ export function FacetSection({
                   <span className="min-w-0 flex-1 truncate" title={name}>
                     {name}
                   </span>
-                  <span className="text-xs text-slate-400">{count}</span>
+                  <span className="text-xs text-faint">{count}</span>
                 </label>
                 {pinnable && (
                   <PinButton name={name} pinned={pinned} />
@@ -118,7 +118,7 @@ export function FacetSection({
           {selected.map((s) => (
             <span
               key={s}
-              className="max-w-full truncate rounded bg-emerald-50 px-1.5 text-[11px] text-emerald-700"
+              className="max-w-full truncate rounded bg-emerald-soft px-1.5 text-[11px] text-emerald-ink"
               title={s}
             >
               {s}

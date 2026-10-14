@@ -556,7 +556,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.9 Visual QA  [ ]   model: sonnet   depends: P5.7, P5.8
+## P5.9 Visual QA  [x]   model: sonnet   depends: P5.7, P5.8
 **Goal:** every route looks right at 1280px and 375px, in light and dark.
 
 **Process:**

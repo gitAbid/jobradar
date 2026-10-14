@@ -13,7 +13,7 @@ export function Highlight({ text, keywords }: { text: string; keywords: string[]
     <>
       {text.split(re).map((part, i) =>
         hits.includes(part.toLowerCase()) ? (
-          <mark key={i} className="rounded bg-amber-200 px-0.5 text-amber-950">
+          <mark key={i} className="rounded bg-amber-line px-0.5 text-amber-ink">
             {part}
           </mark>
         ) : (

@@ -44,19 +44,19 @@ export default async function DashboardPage({
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="relative overflow-hidden rounded-3xl bg-slate-900 px-5 py-6 text-white shadow-[0_18px_45px_rgb(15_42_67/0.14)] sm:px-7 sm:py-8">
+      <section className="relative overflow-hidden rounded-3xl bg-ink px-5 py-6 text-white shadow-[0_18px_45px_rgb(15_42_67/0.14)] sm:px-7 sm:py-8">
         <div className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full border-[24px] border-teal-400/15" />
         <div className="pointer-events-none absolute -bottom-24 right-24 h-48 w-48 rounded-full border-[20px] border-coral-500/10" />
         <div className="relative flex flex-col gap-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-teal-200">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-teal-400/25 bg-teal-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-teal-200">
                 <Sparkles className="h-3.5 w-3.5" /> Live job radar
               </div>
               <h1 className="max-w-xl text-3xl font-bold tracking-[-0.04em] text-white sm:text-4xl">
                 Find your next move.
               </h1>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 sm:text-[15px]">
+              <p className="mt-3 max-w-xl text-sm leading-6 text-ink-muted sm:text-[15px]">
                 Your boards are gathered here, ranked by the skills and places you care about.
                 Scan the newest matches, save the promising ones, and keep moving.
               </p>
@@ -66,25 +66,25 @@ export default async function DashboardPage({
 
           <div className="flex flex-wrap gap-2.5">
             <div className="min-w-32 rounded-2xl border border-white/10 bg-white/10 px-3.5 py-3 backdrop-blur-sm">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">New matches</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">New matches</p>
               <p className="mt-1 text-2xl font-bold tracking-tight text-white">{view.totalNew}</p>
             </div>
             <div className="min-w-32 rounded-2xl border border-white/10 bg-white/10 px-3.5 py-3 backdrop-blur-sm">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Showing now</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">Showing now</p>
               <p className="mt-1 text-2xl font-bold tracking-tight text-white">{view.totalVisible}</p>
             </div>
             <Link
               href={isAdmin ? "/admin/boards" : "/settings"}
-              className="group inline-flex min-h-[4.5rem] flex-1 items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 sm:max-w-xs"
+              className="group inline-flex min-h-[4.5rem] flex-1 items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-3 text-sm text-ink-muted transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 sm:max-w-xs"
             >
               <span className="flex items-center gap-2.5">
                 <BriefcaseBusiness className="h-4 w-4 text-coral-300" />
                 <span>
                   <span className="block font-semibold text-white">{isAdmin ? "Manage your boards" : "Tune your keywords"}</span>
-                  <span className="mt-0.5 block text-xs text-slate-400">{isAdmin ? "Tune sources and keywords" : "Sharpen what the feed ranks"}</span>
+                  <span className="mt-0.5 block text-xs text-ink-muted">{isAdmin ? "Tune sources and keywords" : "Sharpen what the feed ranks"}</span>
                 </span>
               </span>
-              <ArrowUpRight className="h-4 w-4 text-slate-500 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              <ArrowUpRight className="h-4 w-4 text-ink-muted transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </Link>
           </div>
         </div>
@@ -96,14 +96,14 @@ export default async function DashboardPage({
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-700">Latest openings</p>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-ink">Latest openings</p>
+              <p className="mt-1 text-sm text-muted">
                 {view.selections.skill.length > 0 && `Skills: ${view.selections.skill.join(", ")} · `}
                 {view.selections.country.length > 0 && `Countries: ${view.selections.country.join(", ")} · `}
                 {sp.showAll ? "All board results" : "Matched to your keywords"}
               </p>
             </div>
-            <p className="text-xs font-medium text-slate-400">Page {view.currentPage} of {view.totalPages}</p>
+            <p className="text-xs font-medium text-faint">Page {view.currentPage} of {view.totalPages}</p>
           </div>
 
           <FilterBar />

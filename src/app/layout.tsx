@@ -61,15 +61,15 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         {/* applies the saved theme before first paint (no flash) */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-screen bg-sand text-slate-950 antialiased">
+      <body className="min-h-screen bg-sand text-foreground antialiased">
         <ToastProvider>
         <a className="skip-link" href="#main-content">Skip to content</a>
-        <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/90 backdrop-blur-xl">
+        <header className="sticky top-0 z-40 border-b border-border bg-surface-raised/90 backdrop-blur-xl">
           <Suspense fallback={<AppHeader />}>
             <Header />
           </Suspense>

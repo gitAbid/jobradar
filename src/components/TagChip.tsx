@@ -32,14 +32,14 @@ export function TagChip({
       <Link
         href={href}
         title={title}
-        className="inline-flex items-center rounded-lg border border-teal-100 bg-teal-50 px-2 py-1 text-[11px] pointer-coarse:min-h-11 pointer-coarse:px-3 font-semibold text-teal-700 transition-colors hover:border-teal-200 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        className="inline-flex items-center rounded-lg border border-teal-line bg-teal-soft px-2 py-1 text-[11px] pointer-coarse:min-h-11 pointer-coarse:px-3 font-semibold text-teal-ink transition-colors hover:border-teal-line hover:bg-teal-soft2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
       >
         {children}
       </Link>
     );
   }
   if (variant === "board") {
-    return <span className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] text-slate-600">{children}</span>;
+    return <span className="rounded-lg bg-subtle px-2 py-1 text-[11px] text-muted">{children}</span>;
   }
   if (removable) {
     return (
@@ -48,14 +48,14 @@ export function TagChip({
         disabled={disabled}
         aria-label={removeLabel}
         aria-busy={disabled || undefined}
-        className="inline-flex min-h-8 items-center gap-0.5 pointer-coarse:min-h-11 rounded-lg border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-60"
+        className="inline-flex min-h-8 items-center gap-0.5 pointer-coarse:min-h-11 rounded-lg border border-violet-line bg-violet-soft px-2 py-0.5 text-[11px] font-medium text-violet-ink hover:bg-violet-soft2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-60"
       >
         {children} <X aria-hidden="true" className="h-2.5 w-2.5" />
       </button>
     );
   }
   return (
-    <span className="rounded-lg border border-violet-100 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700">
+    <span className="rounded-lg border border-violet-line bg-violet-soft px-2 py-1 text-[11px] font-medium text-violet-ink">
       {children}
     </span>
   );

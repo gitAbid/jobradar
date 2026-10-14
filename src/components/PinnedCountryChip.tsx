@@ -23,13 +23,13 @@ export function PinnedCountryChip({ country }: { country: string }) {
 
   if (!visible) return null;
   return (
-    <span className="group inline-flex shrink-0 items-center overflow-hidden rounded-full border border-teal-200 bg-teal-50 text-xs font-medium text-teal-800">
+    <span className="group inline-flex shrink-0 items-center overflow-hidden rounded-full border border-teal-line bg-teal-soft text-xs font-medium text-teal-ink">
       <Link
         href={`/?country=${encodeURIComponent(country)}`}
         title={`Show ${country} jobs`}
-        className="inline-flex min-h-8 pointer-coarse:min-h-11 items-center gap-1 py-1 pl-2.5 pr-1 hover:text-teal-950"
+        className="inline-flex min-h-8 pointer-coarse:min-h-11 items-center gap-1 py-1 pl-2.5 pr-1 hover:text-teal-ink"
       >
-        <MapPin className="h-3.5 w-3.5 text-teal-600" />
+        <MapPin className="h-3.5 w-3.5 text-primary" />
         {country}
       </Link>
       <button
@@ -37,7 +37,7 @@ export function PinnedCountryChip({ country }: { country: string }) {
         onClick={unpin}
         title={`Unpin ${country}`}
         aria-label={`Unpin ${country}`}
-        className="inline-flex min-h-8 min-w-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11 items-center justify-center p-1.5 text-teal-400 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
+        className="inline-flex min-h-8 min-w-8 pointer-coarse:min-h-11 pointer-coarse:min-w-11 items-center justify-center p-1.5 text-teal-400 transition-colors hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
       >
         <X className="h-3.5 w-3.5" />
       </button>

@@ -33,7 +33,7 @@ function AddTagForm({ id, title }: { id: number; title: string }) {
         aria-label={`Add tag to ${title}`}
         maxLength={40}
         readOnly={pending}
-        className="min-h-8 pointer-coarse:min-h-11 w-20 rounded-lg border border-dashed border-slate-300 bg-white px-2 py-0.5 text-[11px] placeholder:text-slate-400 focus:w-28 focus:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-100"
+        className="min-h-8 pointer-coarse:min-h-11 w-20 rounded-lg border border-dashed border-border-strong bg-surface-raised px-2 py-0.5 text-[11px] placeholder:text-faint focus:w-28 focus:border-violet-line focus:outline-none focus:ring-2 focus:ring-violet-100"
       />
     </form>
   );
@@ -46,22 +46,22 @@ export function PipelineCard({ listing, followed }: { listing: FilterableListing
   const otherStatus: ListingStatus = status === "favorite" ? "applied" : "favorite";
 
   return (
-    <article className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-[0_6px_18px_rgb(15_42_67/0.05)] transition-shadow hover:shadow-[0_10px_24px_rgb(15_42_67/0.09)] sm:p-4">
-      <h3 className="text-sm font-bold leading-snug text-slate-950">
+    <article className="flex flex-col gap-3 rounded-xl border border-border bg-surface-raised p-3.5 shadow-[0_6px_18px_rgb(15_42_67/0.05)] transition-shadow hover:shadow-[0_10px_24px_rgb(15_42_67/0.09)] sm:p-4">
+      <h3 className="text-sm font-bold leading-snug text-foreground">
         <a
           href={listing.url}
           target="_blank"
           rel="noreferrer"
-          className="hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
           {listing.title}
           <span className="sr-only"> (opens in a new tab)</span>
         </a>
       </h3>
       {listing.company ? (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
           <CompanyBadge company={listing.company} followed={followed} />
-          <span className="rounded-full bg-slate-100 px-2 py-1 font-medium">{listing.boardName}</span>
+          <span className="rounded-full bg-subtle px-2 py-1 font-medium">{listing.boardName}</span>
         </div>
       ) : null}
 
@@ -72,7 +72,7 @@ export function PipelineCard({ listing, followed }: { listing: FilterableListing
         <AddTagForm id={listing.id} title={listing.title} />
       </div>
 
-      <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-3">
+      <div className="mt-auto flex items-center gap-2 border-t border-border pt-3">
         <StatusButton
           status={otherStatus}
           active={false}

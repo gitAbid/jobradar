@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import { completeOnboardingAction, skipOnboardingAction } from "./actions";
 
@@ -9,6 +9,11 @@ const SKILLS = ["Java", "Spring Boot", "Kotlin", "Kubernetes", "AWS", "React"];
 
 export function OnboardingForm() {
   const [state, action, pending] = useActionState(completeOnboardingAction, null);
+  const [skipState, skip, skipping] = useActionState(skipOnboardingAction, null);
+  const href = (state?.ok && state.href) || (skipState?.ok && skipState.href) || null;
+  useEffect(() => {
+    if (href) window.location.assign(href);
+  }, [href]);
   return (
     <div className="space-y-4">
       <form action={action} className="space-y-6">
@@ -29,10 +34,10 @@ export function OnboardingForm() {
         {state && !state.ok && (
           <p role="alert" className="text-sm font-semibold text-danger">{state.error}</p>
         )}
-        <Button type="submit" pending={pending}>Show my feed</Button>
+        <Button type="submit" pending={pending || !!href} disabled={skipping}>Show my feed</Button>
       </form>
-      <form action={skipOnboardingAction}>
-        <button type="submit" className="min-h-11 text-sm font-medium text-muted underline hover:text-foreground">
+      <form action={skip}>
+        <button type="submit" disabled={pending || skipping || !!href} className="min-h-11 text-sm font-medium text-muted underline hover:text-foreground">
           Skip for now
         </button>
       </form>

@@ -11,7 +11,7 @@ export function KeywordsForm({ id, keywords }: { id: number; keywords: string[] 
   return (
     <form action={action} className="flex min-w-0 flex-col gap-1.5">
       <input type="hidden" name="id" value={id} />
-      <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400">Extra keywords</span>
+      <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-faint">Extra keywords</span>
       <div className="flex items-center gap-2">
         <input name="keywords" defaultValue={keywords.join(", ")} placeholder="none" className="field-input min-w-0 flex-1" />
         <Button type="submit" size="sm" variant="secondary" pending={pending}>Save</Button>

@@ -7,16 +7,6 @@ const authMock = vi.fn();
 vi.mock("@/auth", () => ({ auth: () => authMock() }));
 vi.mock("react", async (orig) => ({ ...(await orig<typeof import("react")>()), cache: <T,>(f: T) => f }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn() }));
-class Redirect extends Error {
-  constructor(public readonly to: string) {
-    super(`redirect:${to}`);
-  }
-}
-vi.mock("next/navigation", () => ({
-  redirect: (to: string) => {
-    throw new Redirect(to);
-  },
-}));
 
 import { listPinnedCountries, setRemoteHarness } from "@/db";
 import { completeOnboardingAction, skipOnboardingAction } from "@/app/onboarding/actions";
@@ -31,14 +21,9 @@ const form = (o: Record<string, string | string[]>) => {
   for (const [k, v] of Object.entries(o)) for (const x of Array.isArray(v) ? v : [v]) f.append(k, x);
   return f;
 };
-const redirectOf = async (p: Promise<unknown>) => {
-  try {
-    await p;
-  } catch (e) {
-    if (e instanceof Redirect) return e.to;
-    throw e;
-  }
-  return null;
+const hrefOf = async (p: ReturnType<typeof skipOnboardingAction>) => {
+  const r = await p;
+  return r?.ok ? r.href : null;
 };
 
 beforeEach(async () => {
@@ -58,12 +43,12 @@ describe("onboarding", () => {
   it("anonymous writes nothing", async () => {
     authMock.mockResolvedValue(null);
     expect(await completeOnboardingAction(null, form({ keywords: "java" }))).toEqual({ ok: false, error: "Sign in required" });
-    await skipOnboardingAction();
+    expect(await skipOnboardingAction()).toEqual({ ok: false, error: "Sign in required" });
     expect((await db.query("select 1 from user_settings")).rows).toHaveLength(0);
   });
 
   it("saves keywords, pinned countries and the marker for the caller only", async () => {
-    const to = await redirectOf(completeOnboardingAction(null, form({ keywords: "Java, Spring Boot, java", country: ["Canada", "Germany"] })));
+    const to = await hrefOf(completeOnboardingAction(null, form({ keywords: "Java, Spring Boot, java", country: ["Canada", "Germany"] })));
     expect(to).toBe("/?country=Canada&country=Germany");
     expect(await getGlobalKeywords(A)).toEqual(["Java", "Spring Boot"]);
     expect(await listPinnedCountries(A)).toEqual(["Canada", "Germany"]);
@@ -80,7 +65,7 @@ describe("onboarding", () => {
   });
 
   it("skip marks complete without preferences", async () => {
-    expect(await redirectOf(skipOnboardingAction())).toBe("/");
+    expect(await hrefOf(skipOnboardingAction())).toBe("/");
     expect(await needsOnboarding(A)).toBe(false);
     expect(await getGlobalKeywords(A)).toEqual([]);
   });

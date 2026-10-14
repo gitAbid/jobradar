@@ -94,11 +94,11 @@ export function MobileFilterSheet({
         ref={openerRef}
         type="button"
         onClick={() => setMobileOpen(true)}
-        className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface-raised px-3.5 text-sm font-semibold text-muted shadow-sm transition-colors hover:border-teal-line hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         aria-haspopup="dialog"
         aria-expanded={mobileOpen}
       >
-        <SlidersHorizontal className="h-4 w-4 text-teal-600" />
+        <SlidersHorizontal className="h-4 w-4 text-primary" />
         Filters
         {selectedCount > 0 && (
           <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-600 px-1.5 text-[11px] font-bold text-white">
@@ -113,22 +113,22 @@ export function MobileFilterSheet({
             type="button"
             aria-label="Dismiss filter panel"
             tabIndex={-1}
-            className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-y-auto rounded-t-3xl border border-slate-200 bg-sand p-4 shadow-[0_-20px_55px_rgb(15_42_67/0.2)] sm:left-auto sm:inset-y-0 sm:bottom-auto sm:w-[min(26rem,92vw)] sm:rounded-none sm:rounded-l-3xl">
-            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-300 sm:hidden" />
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+          <div className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-y-auto rounded-t-3xl border border-border bg-sand p-4 shadow-[0_-20px_55px_rgb(15_42_67/0.2)] sm:left-auto sm:inset-y-0 sm:bottom-auto sm:w-[min(26rem,92vw)] sm:rounded-none sm:rounded-l-3xl">
+            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-subtle-2 sm:hidden" />
+            <div className="flex items-start justify-between gap-4 border-b border-border pb-4">
               <div>
-                <p className="text-lg font-bold text-slate-950">Refine results</p>
-                <p className="mt-1 text-sm text-slate-500">Narrow the list without losing your place.</p>
+                <p className="text-lg font-bold text-foreground">Refine results</p>
+                <p className="mt-1 text-sm text-muted">Narrow the list without losing your place.</p>
               </div>
               <button
                 ref={closeRef}
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close filters"
-                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface-raised text-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -150,7 +150,7 @@ export function MobileFilterSheet({
                 />
               ))}
             </div>
-            <div className="mt-5 flex gap-2 border-t border-slate-200 pt-4">
+            <div className="mt-5 flex gap-2 border-t border-border pt-4">
               <button
                 type="button"
                 onClick={() => {
@@ -158,14 +158,14 @@ export function MobileFilterSheet({
                   setMobileOpen(false);
                 }}
                 disabled={!hasFilters}
-                className="min-h-11 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-11 flex-1 rounded-xl border border-border bg-surface-raised px-4 text-sm font-semibold text-muted transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Clear all
               </button>
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
-                className="min-h-11 flex-1 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                className="min-h-11 flex-1 rounded-xl bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ink/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
                 See results
               </button>

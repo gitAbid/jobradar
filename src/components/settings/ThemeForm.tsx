@@ -19,7 +19,7 @@ export function ThemeForm({ theme }: { theme: Theme }) {
         {THEMES.map((t) => (
           <label
             key={t}
-            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:border-violet-300 has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border px-3 text-sm font-medium text-muted hover:border-violet-line has-[:checked]:border-violet-line has-[:checked]:bg-violet-soft"
           >
             <input
               type="radio"

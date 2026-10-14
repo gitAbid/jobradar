@@ -18,14 +18,14 @@ export function FilterBar() {
   const hasQuickFilters = Boolean(q || status || remote || visa === "1" || showAll === "1");
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_10px_28px_rgb(15_42_67/0.05)] sm:p-4">
+    <div className="rounded-2xl border border-border bg-surface-raised p-3 shadow-[0_10px_28px_rgb(15_42_67/0.05)] sm:p-4">
       <div className="flex flex-wrap items-center gap-2">
       <form
         key={`search-${q}`}
         action={pathname}
         method="get"
         role="search"
-        className="flex min-h-11 min-w-56 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 transition-colors focus-within:border-teal-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-100"
+        className="flex min-h-11 min-w-56 flex-1 items-center gap-2 rounded-xl border border-border bg-surface px-3 transition-colors focus-within:border-teal-line focus-within:bg-surface-raised focus-within:ring-2 focus-within:ring-teal-100"
         onSubmit={(e) => {
           e.preventDefault();
           const input = (e.currentTarget.elements.namedItem("q") as HTMLInputElement).value;
@@ -38,13 +38,13 @@ export function FilterBar() {
           .map(([k, v], i) => (
             <input key={`${k}-${i}`} type="hidden" name={k} value={v} />
           ))}
-        <Search aria-hidden="true" className="h-4 w-4 text-slate-400" />
+        <Search aria-hidden="true" className="h-4 w-4 text-faint" />
         <input
           name="q"
           defaultValue={q}
           aria-label="Search jobs"
           placeholder="Search title, company, skill..."
-          className="w-full bg-transparent text-[15px] outline-none placeholder:text-slate-400"
+          className="w-full bg-transparent text-[15px] outline-none placeholder:text-faint"
         />
         <button type="submit" className="sr-only">
           Search
@@ -54,7 +54,7 @@ export function FilterBar() {
             type="button"
             onClick={() => setParam("q", "")}
             aria-label="Clear search"
-            className="inline-flex h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="inline-flex h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 shrink-0 items-center justify-center rounded-lg text-faint hover:bg-subtle-2 hover:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             <X className="h-4 w-4" />
           </button>
@@ -65,7 +65,7 @@ export function FilterBar() {
         value={status}
         onChange={(e) => setParam("status", e.target.value)}
         aria-label="Filter by status"
-        className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 transition-colors hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-teal-500"
+        className="min-h-11 rounded-xl border border-border bg-surface-raised px-3 text-sm text-muted transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-teal-500"
       >
         <option value="">Status: all</option>
         <option value="new">New</option>
@@ -77,7 +77,7 @@ export function FilterBar() {
         value={remote}
         onChange={(e) => setParam("remote", e.target.value)}
         aria-label="Filter by work location"
-        className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 transition-colors hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-teal-500"
+        className="min-h-11 rounded-xl border border-border bg-surface-raised px-3 text-sm text-muted transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-teal-500"
         title="Work location"
       >
         <option value="">Location: any</option>
@@ -86,7 +86,7 @@ export function FilterBar() {
         <option value="restricted">Remote: select countries</option>
       </select>
 
-      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 transition-colors hover:border-slate-400 has-[:checked]:border-sky-300 has-[:checked]:bg-sky-50 has-[:checked]:text-sky-800">
+      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-surface-raised px-3 text-sm text-muted transition-colors hover:border-border-strong has-[:checked]:border-sky-line has-[:checked]:bg-sky-soft has-[:checked]:text-sky-ink">
         <input
           type="checkbox"
           checked={visa === "1"}
@@ -97,7 +97,7 @@ export function FilterBar() {
       </label>
 
       <label
-        className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-colors hover:border-slate-400 has-[:checked]:border-violet-300 has-[:checked]:bg-violet-50 has-[:checked]:text-violet-800"
+        className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-surface-raised px-3 text-sm font-medium text-muted transition-colors hover:border-border-strong has-[:checked]:border-violet-line has-[:checked]:bg-violet-soft has-[:checked]:text-violet-ink"
         title="Show listings that don't match your keywords too"
       >
         <SlidersHorizontal className="h-4 w-4 text-violet-600" />
@@ -111,12 +111,12 @@ export function FilterBar() {
       </label>
       </div>
       {hasQuickFilters && (
-        <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
-          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Quick filters active</span>
+        <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-faint">Quick filters active</span>
           <button
             type="button"
             onClick={clearQuickFilters}
-            className="inline-flex min-h-8 pointer-coarse:min-h-11 items-center text-xs font-semibold text-teal-700 hover:text-teal-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="inline-flex min-h-8 pointer-coarse:min-h-11 items-center text-xs font-semibold text-teal-ink hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             Reset
           </button>

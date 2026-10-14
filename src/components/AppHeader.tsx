@@ -29,11 +29,11 @@ function NavItem({
       aria-current={active ? "page" : undefined}
       className={`group inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 lg:min-h-9 lg:px-3.5 ${
         active
-          ? "bg-slate-900 text-white shadow-sm"
-          : "text-slate-600 hover:bg-white hover:text-slate-950"
+          ? "bg-ink text-white shadow-sm"
+          : "text-muted hover:bg-surface-raised hover:text-foreground"
       }`}
     >
-      <Icon className={`h-4 w-4 ${active ? "text-teal-300" : "text-slate-400 group-hover:text-teal-600"}`} />
+      <Icon className={`h-4 w-4 ${active ? "text-teal-300" : "text-faint group-hover:text-primary"}`} />
       {label}
     </Link>
   );
@@ -67,21 +67,21 @@ export function AppHeader({
           href="/"
           className="group flex shrink-0 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm transition-transform group-hover:-rotate-6">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-ink text-white shadow-sm transition-transform group-hover:-rotate-6">
             <Radar className="h-5 w-5 text-teal-300" />
           </span>
           <span>
-            <span className="block text-[15px] font-bold leading-none tracking-tight text-slate-950">
-              Job<span className="text-teal-600">Radar</span>
+            <span className="block text-[15px] font-bold leading-none tracking-tight text-foreground">
+              Job<span className="text-primary">Radar</span>
             </span>
-            <span className="mt-1 hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 sm:block">
+            <span className="mt-1 hidden text-[10px] font-semibold uppercase tracking-[0.18em] text-faint sm:block">
               Your next move
             </span>
           </span>
         </Link>
 
         {!signedOut && (
-        <nav className="ml-auto hidden items-center gap-1 rounded-2xl bg-slate-100/80 p-1 lg:flex" aria-label="Primary navigation">
+        <nav className="ml-auto hidden items-center gap-1 rounded-2xl bg-subtle p-1 lg:flex" aria-label="Primary navigation">
           {links.map((link) => (
             <NavItem key={link.href} {...link} />
           ))}
@@ -93,7 +93,7 @@ export function AppHeader({
 
       {!signedOut && (
       <div
-        className={`nav-scroll -mx-4 flex items-center gap-1 overflow-x-auto border-t border-slate-200/80 px-4 py-1.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] sm:-mx-6 sm:px-6 ${hasPinned ? "" : "lg:hidden"}`}
+        className={`nav-scroll -mx-4 flex items-center gap-1 overflow-x-auto border-t border-border px-4 py-1.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] sm:-mx-6 sm:px-6 ${hasPinned ? "" : "lg:hidden"}`}
       >
         <nav className="flex shrink-0 items-center gap-1 lg:hidden" aria-label="Primary navigation">
           {links.map((link) => (
@@ -102,8 +102,8 @@ export function AppHeader({
         </nav>
         {hasPinned && (
           <div className="flex shrink-0 items-center gap-2 pl-2 pr-8 lg:pl-0">
-            <span aria-hidden="true" className="h-5 w-px bg-slate-200 lg:hidden" />
-            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+            <span aria-hidden="true" className="h-5 w-px bg-subtle-2 lg:hidden" />
+            <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-faint">
               Pinned locations
             </span>
             {pinned}

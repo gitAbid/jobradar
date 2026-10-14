@@ -33,10 +33,10 @@ export function Pagination({ currentPage, totalPages }: Props) {
   if (totalPages <= 1) return null;
 
   const navClass =
-    "inline-flex min-h-11 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500";
+    "inline-flex min-h-11 items-center gap-1 rounded-xl border border-border bg-surface-raised px-3 text-sm font-semibold text-muted transition-colors hover:border-teal-line hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500";
 
   const disabledClass =
-    "inline-flex min-h-11 cursor-not-allowed items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-400";
+    "inline-flex min-h-11 cursor-not-allowed items-center gap-1 rounded-xl border border-border bg-surface px-3 text-sm font-semibold text-faint";
 
   return (
     <nav className="flex flex-wrap items-center justify-center gap-1.5 pt-2" aria-label="Pagination">
@@ -52,14 +52,14 @@ export function Pagination({ currentPage, totalPages }: Props) {
 
       {buildPages(currentPage, totalPages).map((p, i) =>
         p === "gap" ? (
-          <span key={`gap-${i}`} className="px-1 text-slate-400">
+          <span key={`gap-${i}`} className="px-1 text-faint">
             …
           </span>
         ) : p === currentPage ? (
           <span
             key={p}
             aria-current="page"
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-slate-900 px-2.5 text-sm font-semibold text-white"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-ink px-2.5 text-sm font-semibold text-white"
           >
             {p}
           </span>
@@ -67,7 +67,7 @@ export function Pagination({ currentPage, totalPages }: Props) {
           <Link
             key={p}
             href={hrefFor(p)}
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-border bg-surface-raised px-2.5 text-sm font-semibold text-muted transition-colors hover:border-teal-line hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             {p}
           </Link>

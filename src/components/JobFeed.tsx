@@ -68,7 +68,7 @@ export function JobFeed({
           />
         ))}
       </div>
-      <p className="text-center text-xs font-medium text-slate-400">
+      <p className="text-center text-xs font-medium text-faint">
         Showing {(view.currentPage - 1) * PAGE_SIZE + 1}–
         {Math.min(view.currentPage * PAGE_SIZE, view.totalVisible)} of {view.totalVisible}
       </p>

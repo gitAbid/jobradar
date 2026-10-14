@@ -3,7 +3,7 @@ import { HeroSkeleton, ListingCardSkeleton, Skeleton } from "@/components/Skelet
 /** Dashboard fallback: hero, facet sidebar + listing list. */
 export default function Loading() {
   return (
-    <div className="flex flex-col gap-5" aria-busy="true" aria-label="Loading dashboard">
+    <div className="flex flex-col gap-5" aria-busy="true" aria-label="Loading jobs">
       <HeroSkeleton />
       <div className="flex flex-col gap-5 lg:flex-row lg:gap-6">
         <div className="hidden w-64 shrink-0 flex-col gap-3 lg:flex">

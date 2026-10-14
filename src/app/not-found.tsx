@@ -12,7 +12,7 @@ export default function NotFound() {
             href="/"
             className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           >
-            Back to dashboard
+            Back to jobs
           </Link>
         }
       />

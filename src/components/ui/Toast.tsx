@@ -13,6 +13,8 @@ interface ToastItem extends ToastInput { id: number }
 const ToastContext = createContext<((t: ToastInput) => void) | null>(null);
 
 const DISMISS_MS = 5000;
+/** Toasts with an action (e.g. Undo) stay longer so there is time to use it. */
+const ACTION_DISMISS_MS = 10000;
 
 const tones: Record<ToastTone, string> = {
   neutral: "border-border-strong",
@@ -35,7 +37,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const toast = useCallback((input: ToastInput) => {
     const id = nextId.current++;
     setItems((cur) => [...cur, { ...input, id }]);
-    timers.current.set(id, setTimeout(() => dismiss(id), DISMISS_MS));
+    timers.current.set(id, setTimeout(() => dismiss(id), input.action ? ACTION_DISMISS_MS : DISMISS_MS));
   }, [dismiss]);
 
   useEffect(() => {

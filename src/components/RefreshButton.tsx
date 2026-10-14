@@ -25,7 +25,7 @@ export function RefreshButton() {
         ensurePolling();
       }}
       disabled={busy || pending}
-      className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-3.5 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:bg-teal-50 hover:text-teal-900 disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+      className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-surface-raised px-3.5 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-teal-soft hover:text-teal-ink disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
     >
       <RefreshCw className={`h-4 w-4 ${busy || pending ? "animate-spin" : ""}`} />
       {busy ? "Refreshing..." : pending ? "Updating..." : "Refresh now"}

@@ -41,17 +41,17 @@ export function FacetSidebar({ facets, pinnedCountries = [] }: Props) {
   return (
     <>
       <aside className="hidden w-56 shrink-0 lg:block">
-        <div className="sticky top-[8.75rem] flex h-[calc(100vh-10rem)] flex-col gap-1 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_12px_35px_rgb(15_42_67/0.06)]">
-          <div className="mb-2 flex items-center justify-between border-b border-slate-100 px-1 pb-3">
+        <div className="sticky top-[8.75rem] flex h-[calc(100vh-10rem)] flex-col gap-1 overflow-hidden rounded-2xl border border-border bg-surface-raised p-3 shadow-[0_12px_35px_rgb(15_42_67/0.06)]">
+          <div className="mb-2 flex items-center justify-between border-b border-border px-1 pb-3">
             <div>
-              <p className="text-sm font-bold text-slate-900">Refine results</p>
-              <p className="mt-0.5 text-[11px] text-slate-400">Choose more than one</p>
+              <p className="text-sm font-bold text-foreground">Refine results</p>
+              <p className="mt-0.5 text-[11px] text-faint">Choose more than one</p>
             </div>
             {hasFilters && (
               <button
                 type="button"
                 onClick={clearAll}
-                className="rounded-lg px-2 py-1 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                className="rounded-lg px-2 py-1 text-[11px] font-semibold text-teal-ink transition-colors hover:bg-teal-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
                 Clear all
               </button>

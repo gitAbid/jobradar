@@ -97,7 +97,7 @@ describe("Toast", () => {
     fireEvent.click(screen.getByText("Undo"));
     expect(onUndo).toHaveBeenCalled();
     fireEvent.click(screen.getByText("Go"));
-    act(() => { vi.advanceTimersByTime(5100); });
+    act(() => { vi.advanceTimersByTime(10100); }); // actionable toasts stay 10s
     expect(region.textContent).not.toContain("Deleted");
     vi.useRealTimers();
   });

@@ -1,12 +1,16 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { run } from "@/db";
 import { markOnboardingComplete, setGlobalKeywords } from "@/lib/settings";
 import { AuthError, requireUser, type SessionUser } from "@/lib/authz";
 
-export type OnboardingResult = { ok: false; error: string } | null;
+/**
+ * `href` is where to go next. The client does a full navigation there rather
+ * than a server-action redirect: the router has a cached "/" from before
+ * onboarding (which redirected here) and would reuse it.
+ */
+export type OnboardingResult = { ok: true; href: string } | { ok: false; error: string } | null;
 
 async function gate(): Promise<SessionUser | null> {
   try {
@@ -52,14 +56,14 @@ export async function completeOnboardingAction(_prev: OnboardingResult, formData
   const params = new URLSearchParams();
   for (const c of countries) params.append("country", c);
   const qs = params.toString();
-  redirect(qs ? `/?${qs}` : "/");
+  return { ok: true, href: qs ? `/?${qs}` : "/" };
 }
 
 /** Skip: record completion without changing any preferences. */
-export async function skipOnboardingAction(): Promise<void> {
+export async function skipOnboardingAction(): Promise<OnboardingResult> {
   const user = await gate();
-  if (!user) return;
+  if (!user) return { ok: false, error: "Sign in required" };
   await markOnboardingComplete(user.id);
   revalidatePath("/", "layout");
-  redirect("/");
+  return { ok: true, href: "/" };
 }

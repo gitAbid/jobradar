@@ -27,22 +27,22 @@ export default async function SettingsPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8">
       <header>
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-700">Your account</p>
-        <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-950">
-          <Settings2 className="h-5 w-5 text-teal-600" /> Settings
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-ink">Your account</p>
+        <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+          <Settings2 className="h-5 w-5 text-primary" /> Settings
         </h1>
       </header>
 
       <section id="preferences" className="flex scroll-mt-24 flex-col gap-4">
-        <h2 className="text-lg font-bold tracking-tight text-slate-950">Matching</h2>
-        <p className="text-sm text-slate-500">
+        <h2 className="text-lg font-bold tracking-tight text-foreground">Matching</h2>
+        <p className="text-sm text-muted">
           Your feed is ranked by these keywords, and a ping sounds when a refresh finds new matches.
         </p>
         <PreferencesForm keywords={keywords} sound={sound} />
       </section>
 
       <section id="appearance" className="flex scroll-mt-24 flex-col gap-4">
-        <h2 className="text-lg font-bold tracking-tight text-slate-950">Appearance</h2>
+        <h2 className="text-lg font-bold tracking-tight text-foreground">Appearance</h2>
         <ThemeForm theme={theme} />
       </section>
 

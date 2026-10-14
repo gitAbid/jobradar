@@ -6,18 +6,18 @@ import { type FreshnessInfo, type FreshnessTier } from "@/lib/freshness";
  * so the quiet majority of cards are untouched and text contrast is unchanged.
  */
 export const CARD_ACCENT: Record<FreshnessTier, string> = {
-  fresh: "border-l-[3px] border-l-emerald-400/70 bg-emerald-50/40 hover:border-l-emerald-300",
-  closing: "border-l-[3px] border-l-amber-400/70 bg-amber-50/40 hover:border-l-amber-300",
-  expired: "border-l-[3px] border-l-slate-300/70",
+  fresh: "border-l-[3px] border-l-emerald-400/70 bg-emerald-soft/40 hover:border-l-emerald-300",
+  closing: "border-l-[3px] border-l-amber-400/70 bg-amber-soft/40 hover:border-l-amber-300",
+  expired: "border-l-[3px] border-l-border-strong",
   recent: "",
   aging: "",
   unknown: "",
 };
 
 const BADGE_STYLE: Record<FreshnessTier, string> = {
-  fresh: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  closing: "border-amber-200 bg-amber-50 text-amber-800",
-  expired: "border-slate-200 bg-slate-100 text-slate-500",
+  fresh: "border-emerald-line bg-emerald-soft text-emerald-ink",
+  closing: "border-amber-line bg-amber-soft text-amber-ink",
+  expired: "border-border bg-subtle text-muted",
   recent: "",
   aging: "",
   unknown: "",
@@ -26,7 +26,7 @@ const BADGE_STYLE: Record<FreshnessTier, string> = {
 const BADGE_DOT: Record<FreshnessTier, string> = {
   fresh: "bg-emerald-500",
   closing: "bg-amber-500",
-  expired: "bg-slate-400",
+  expired: "bg-faint",
   recent: "",
   aging: "",
   unknown: "",

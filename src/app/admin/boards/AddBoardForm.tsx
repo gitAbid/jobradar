@@ -7,7 +7,7 @@ import { Button } from "@/components/ui";
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-slate-600">
+    <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-muted">
       {label}
       {children}
       {error && <span role="alert" className="text-xs font-semibold text-danger">{error}</span>}
@@ -23,15 +23,15 @@ export function AddBoardForm() {
   return (
     <form
       action={action}
-      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_28px_rgb(15_42_67/0.05)] sm:p-5"
+      className="rounded-2xl border border-border bg-surface-raised p-4 shadow-[0_10px_28px_rgb(15_42_67/0.05)] sm:p-5"
     >
       <div className="mb-4 flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-soft text-teal-ink">
           <Plus className="h-5 w-5" />
         </span>
         <div>
-          <h2 className="text-sm font-bold text-slate-900">Add a job board</h2>
-          <p className="mt-0.5 text-xs text-slate-500">API boards return JSON; RSS boards accept any RSS or Atom feed URL.</p>
+          <h2 className="text-sm font-bold text-foreground">Add a job board</h2>
+          <p className="mt-0.5 text-xs text-muted">API boards return JSON; RSS boards accept any RSS or Atom feed URL.</p>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_0.8fr_1.5fr_1.2fr_auto] lg:items-start">
