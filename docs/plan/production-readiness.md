@@ -92,7 +92,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test, build.
 
-## P1.3 SSRF-safe fetch  [ ]   model: sonnet   depends: P0.4
+## P1.3 SSRF-safe fetch  [x]   model: sonnet   depends: P0.4
 **Goal:** server-side fetches of board URLs can't reach internal networks.
 
 **Research:** `docs/research/ssrf-safe-fetch.md`. The question: how to pin DNS in Node 24 fetch/undici so the validated IP is the one connected to, e.g. an undici `Agent` with a custom `connect.lookup`; and how to handle redirects.

@@ -12,7 +12,7 @@ import { refreshBoard } from "@/lib/refresh";
 const boardSchema = z.object({
   name: z.string().min(1).max(80),
   type: z.enum(["api", "rss"]),
-  url: z.url(),
+  url: z.url({ protocol: /^https?$/ }),
   keywords: z.array(z.string().max(60)).max(20).default([]),
 });
 

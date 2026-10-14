@@ -1,4 +1,5 @@
 import type { Browser } from "playwright";
+import { assertSafeUrl } from "@/lib/safe-fetch";
 
 /**
  * Lazy singleton headless Chromium for scraping JS-rendered career pages.
@@ -57,6 +58,9 @@ export async function renderPage(url: string, waitMs = 4000): Promise<string> {
   const ctx = await browser.newContext({ userAgent: UA });
   try {
     const page = await ctx.newPage();
+    // Checked outside the goto .catch so a blocked URL throws. Cannot pin DNS or
+    // vet in-browser redirects/subresources.
+    await assertSafeUrl(url);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     return await page.content();
@@ -72,6 +76,9 @@ export async function renderText(url: string, waitMs = 3500): Promise<string> {
   const ctx = await browser.newContext({ userAgent: UA });
   try {
     const page = await ctx.newPage();
+    // Checked outside the goto .catch so a blocked URL throws. Cannot pin DNS or
+    // vet in-browser redirects/subresources.
+    await assertSafeUrl(url);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     return await page.evaluate(() => document.body.innerText ?? "");

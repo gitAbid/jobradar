@@ -26,6 +26,7 @@ import {
 import { decodeEntities, isTechTitle, parseArcJobs, parseArcDetail, parseEasyJobsApi, parseNextJobzDetail, parseNextJobzSitemap, parseRelocateMe, parseRelocateMeDetail, parseRiseupLabs, parseRiseupLabsDetail, parseSkillJobs, parseSkillJobsDetail, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
 import { knownEnrichedExternalIds, persistEnrichment, q } from "@/db";
 import type { EnrichPatch } from "@/db";
+import { safeFetch } from "@/lib/safe-fetch";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
 
@@ -69,7 +70,7 @@ async function fetchText(url: string, headers: Record<string, string> = {}): Pro
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(url, {
+      const res = await safeFetch(url, {
         headers: { "User-Agent": UA, Accept: "application/json, text/xml, */*", ...headers },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
