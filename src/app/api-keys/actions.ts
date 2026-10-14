@@ -44,20 +44,26 @@ export async function createApiKeyAction(
   }
 }
 
-export async function revokeApiKeyAction(formData: FormData): Promise<void> {
+export type RevokeKeyResult = { ok: true } | { ok: false; error: string };
+
+export async function revokeApiKeyAction(formData: FormData): Promise<RevokeKeyResult> {
   let user;
   try {
     user = await requireUser();
   } catch (err) {
-    if (err instanceof AuthError) return;
+    if (err instanceof AuthError) {
+      return { ok: false, error: err.status === 401 ? "Sign in required" : "Not allowed" };
+    }
     throw err;
   }
   const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return;
+  if (!Number.isInteger(id)) return { ok: false, error: "Invalid key." };
   try {
     await revokeApiKey(apiKeys(), id, user.id);
   } catch (err) {
     console.error("[jobradar] revoke API key failed:", err);
+    return { ok: false, error: "Couldn’t revoke the key — try again shortly." };
   }
   revalidatePath("/api-keys");
+  return { ok: true };
 }

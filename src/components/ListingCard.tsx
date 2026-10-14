@@ -1,6 +1,7 @@
-import { Heart, Send, Eye, ExternalLink, MapPin, Building2, Globe, Plane, Star, ChevronDown } from "lucide-react";
+import { ExternalLink, MapPin, Globe, Plane, ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { setListingStatusAction, toggleFollowCompanyAction } from "@/app/actions";
+import { CompanyBadge } from "@/components/CompanyBadge";
+import { ListingStatusButtons } from "@/components/ListingStatusButtons";
 import { freshnessOf, type FreshnessTier } from "@/lib/freshness";
 import type { FilterableListing } from "@/lib/types";
 
@@ -71,66 +72,6 @@ function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
         ),
       )}
     </>
-  );
-}
-
-function StatusButton({
-  id,
-  status,
-  active,
-  children,
-  title,
-}: {
-  id: number;
-  status: string;
-  active: boolean;
-  children: React.ReactNode;
-  title: string;
-}) {
-  return (
-    <form action={setListingStatusAction}>
-      <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="status" value={status} />
-      <button
-        type="submit"
-        title={title}
-        className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-          active
-            ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-            : "border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800"
-        }`}
-      >
-        {children}
-      </button>
-    </form>
-  );
-}
-
-/** Company badge with integrated follow toggle — click to follow/unfollow. */
-export function CompanyBadge({
-  company,
-  followed,
-}: {
-  company: string;
-  followed: boolean;
-}) {
-  return (
-    <form action={toggleFollowCompanyAction} className="inline">
-      <input type="hidden" name="company" value={company} />
-      <button
-        type="submit"
-        title={followed ? `Unfollow ${company}` : `Follow ${company} for new openings`}
-        className={`inline-flex min-h-9 max-w-[240px] items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
-          followed
-            ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
-            : "border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800"
-        }`}
-      >
-        <Building2 className="h-3 w-3 shrink-0" />
-        <span className="truncate">{company}</span>
-        <Star className={`h-3 w-3 shrink-0 ${followed ? "fill-current text-amber-500" : "opacity-40"}`} />
-      </button>
-    </form>
   );
 }
 
@@ -245,23 +186,7 @@ export function ListingCard({
       )}
 
       <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-        <StatusButton id={listing.id} status="favorite" active={listing.status === "favorite"} title="Favorite">
-          <Heart className="h-3.5 w-3.5" /> Favorite
-        </StatusButton>
-        <StatusButton id={listing.id} status="applied" active={listing.status === "applied"} title="Mark applied">
-          <Send className="h-3.5 w-3.5" /> Applied
-        </StatusButton>
-        <StatusButton id={listing.id} status="hidden" active={false} title="Hide this listing">
-          <Eye className="h-3.5 w-3.5" /> Hide
-        </StatusButton>
-        {listing.status === "favorite" || listing.status === "applied" ? (
-          <Link
-            href="/applied"
-            className="ml-auto inline-flex min-h-10 items-center rounded-lg px-2 text-xs font-semibold text-slate-400 transition-colors hover:bg-slate-50 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          >
-            Manage saved jobs <span aria-hidden="true" className="ml-1">→</span>
-          </Link>
-        ) : null}
+        <ListingStatusButtons id={listing.id} status={listing.status} />
       </div>
     </article>
   );

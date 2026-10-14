@@ -472,7 +472,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.3 Action feedback, optimistic UI, confirm/undo  [ ]   model: sonnet   depends: P5.2, P3.4
+## P5.3 Action feedback, optimistic UI, confirm/undo  [x]   model: sonnet   depends: P5.2, P3.4
 **Files:** `src/app/actions.ts`, `src/components/ListingCard.tsx`, `src/app/applied/page.tsx`, `src/app/boards/page.tsx`, `src/components/api-keys/RevokeButton.tsx`, `src/app/layout.tsx` (ToastProvider).
 
 **Acceptance:**

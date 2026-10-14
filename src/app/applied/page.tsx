@@ -1,15 +1,10 @@
 import { LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
 import { requirePageUser } from "@/lib/authz";
 import type { FilterableListing, ListingStatus } from "@/lib/types";
-import {
-  addUserTagAction,
-  removeUserTagAction,
-  setListingStatusAction,
-} from "@/app/actions";
-import { ArrowRight, Heart, Send, X, Trash2 } from "lucide-react";
+import { ArrowRight, Heart, Send } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
-import { CompanyBadge } from "@/components/ListingCard";
+import { PipelineCard } from "./PipelineCard";
 
 const COLUMNS: Array<{ status: ListingStatus; title: string; icon: React.ReactNode }> = [
   { status: "favorite", title: "Favorite", icon: <Heart className="h-4 w-4" /> },
@@ -118,7 +113,11 @@ export default async function AppliedPage() {
               )}
 
               {items.map((l) => (
-                <PipelineCard key={l.id} listing={l} followedCompanies={followedCompanies} />
+                <PipelineCard
+                  key={l.id}
+                  listing={l}
+                  followed={followedCompanies.has(l.company.toLowerCase())}
+                />
               ))}
 
               {total > items.length && (
@@ -134,82 +133,5 @@ export default async function AppliedPage() {
         })}
       </div>
     </div>
-  );
-}
-
-function PipelineCard({
-  listing,
-  followedCompanies,
-}: {
-  listing: FilterableListing;
-  followedCompanies: Set<string>;
-}) {
-  const otherStatus: ListingStatus = listing.status === "favorite" ? "applied" : "favorite";
-
-  return (
-    <article className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-[0_6px_18px_rgb(15_42_67/0.05)] transition-shadow hover:shadow-[0_10px_24px_rgb(15_42_67/0.09)] sm:p-4">
-      <a
-        href={listing.url}
-        target="_blank"
-        rel="noreferrer"
-        className="text-sm font-bold leading-snug text-slate-950 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-      >
-        {listing.title}
-      </a>
-      {listing.company ? (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-          <CompanyBadge
-            company={listing.company}
-            followed={followedCompanies.has(listing.company.toLowerCase())}
-          />
-          <span className="rounded-full bg-slate-100 px-2 py-1 font-medium">{listing.boardName}</span>
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {listing.userTags.map((t) => (
-          <form key={t} action={removeUserTagAction} className="inline">
-            <input type="hidden" name="id" value={listing.id} />
-            <input type="hidden" name="tag" value={t} />
-            <button className="inline-flex min-h-8 items-center gap-0.5 rounded-lg border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
-              #{t} <X className="h-2.5 w-2.5" />
-            </button>
-          </form>
-        ))}
-        <form action={addUserTagAction} className="inline-flex items-center">
-          <input type="hidden" name="id" value={listing.id} />
-          <input
-            name="tag"
-            placeholder="+ tag"
-            aria-label={`Add tag to ${listing.title}`}
-            maxLength={40}
-            className="min-h-8 w-20 rounded-lg border border-dashed border-slate-300 bg-white px-2 py-0.5 text-[11px] placeholder:text-slate-400 focus:w-28 focus:border-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-100"
-          />
-        </form>
-      </div>
-
-      <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-3">
-        <form action={setListingStatusAction} className="flex-1">
-          <input type="hidden" name="id" value={listing.id} />
-          <input type="hidden" name="status" value={otherStatus} />
-          <button className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
-            Move to {otherStatus === "favorite" ? "Favorite" : "Applied"}
-            <ArrowRight className="h-3 w-3" />
-          </button>
-        </form>
-        <form action={setListingStatusAction}>
-          <input type="hidden" name="id" value={listing.id} />
-          <input type="hidden" name="status" value="new" />
-          <button
-            type="submit"
-            title="Remove from board"
-            aria-label={`Remove ${listing.title} from pipeline`}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </form>
-      </div>
-    </article>
   );
 }

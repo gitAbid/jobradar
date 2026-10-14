@@ -2,10 +2,10 @@ import { connection } from "next/server";
 import { requirePageUser } from "@/lib/authz";
 import Link from "next/link";
 import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
-import { toggleFollowCompanyAction } from "@/app/actions";
+import { UnfollowButton } from "@/components/UnfollowButton";
 import { ListingCard } from "@/components/ListingCard";
 import { EmptyState } from "@/components/ui";
-import { ArrowUpRight, Building2, Star, X } from "lucide-react";
+import { ArrowUpRight, Building2, Star } from "lucide-react";
 import type { FilterableListing } from "@/lib/types";
 
 const FOLLOWING_LIMIT = 200;
@@ -142,17 +142,10 @@ export default async function FollowingPage({
                       {counts.get(name.toLowerCase()) ?? 0}
                     </span>
                   </Link>
-                  <form action={toggleFollowCompanyAction}>
-                    <input type="hidden" name="company" value={name} />
-                    <button
-                      type="submit"
-                      title={`Unfollow ${name}`}
-                      aria-label={`Unfollow ${name}`}
-                      className={`inline-flex min-h-10 items-center p-2 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500 ${isActive ? "text-amber-700" : "text-amber-400"}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </form>
+                  <UnfollowButton
+                    name={name}
+                    className={`inline-flex min-h-10 items-center p-2 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500 ${isActive ? "text-amber-700" : "text-amber-400"}`}
+                  />
                 </span>
               );
             })}

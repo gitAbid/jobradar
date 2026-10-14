@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { MapPin, X } from "lucide-react";
-import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { listPinnedCountries } from "@/db";
 import { isSoundEnabled } from "@/lib/settings";
 import { getSessionUser } from "@/lib/authz";
-import { togglePinCountryAction } from "@/app/actions";
+import { PinnedCountryChip } from "@/components/PinnedCountryChip";
+import { ToastProvider } from "@/components/ui";
 import { AppHeader } from "@/components/AppHeader";
 import { UserMenu } from "@/components/UserMenu";
 import { RefreshStatusBar } from "@/components/RefreshStatusBar";
@@ -36,30 +35,7 @@ async function PinnedCountriesNav() {
           Pinned locations
         </span>
         {pinned.map((country) => (
-          <span
-            key={country}
-            className="group inline-flex shrink-0 items-center overflow-hidden rounded-full border border-teal-200 bg-teal-50 text-xs font-medium text-teal-800"
-          >
-            <Link
-              href={`/?country=${encodeURIComponent(country)}`}
-              title={`Show ${country} jobs`}
-              className="inline-flex min-h-8 items-center gap-1 py-1 pl-2.5 pr-1 hover:text-teal-950"
-            >
-              <MapPin className="h-3.5 w-3.5 text-teal-600" />
-              {country}
-            </Link>
-            <form action={togglePinCountryAction}>
-              <input type="hidden" name="country" value={country} />
-              <button
-                type="submit"
-                title={`Unpin ${country}`}
-                aria-label={`Unpin ${country}`}
-                className="inline-flex min-h-8 items-center p-1.5 text-teal-400 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </form>
-          </span>
+          <PinnedCountryChip key={country} country={country} />
         ))}
       </div>
     </div>
@@ -79,6 +55,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-sand text-slate-950 antialiased">
+        <ToastProvider>
         <a className="skip-link" href="#main-content">Skip to content</a>
         <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/90 backdrop-blur-xl">
           <AppHeader />
@@ -98,6 +75,7 @@ export default function RootLayout({
           {/* pages read the DB at request time (connection()); stream them under the static shell */}
           <Suspense fallback={null}>{children}</Suspense>
         </main>
+        </ToastProvider>
       </body>
     </html>
   );

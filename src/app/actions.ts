@@ -16,6 +16,13 @@ const boardSchema = z.object({
   keywords: z.array(z.string().max(60)).max(20).default([]),
 });
 
+const FIELD_MESSAGES: Record<string, string> = {
+  name: "Enter a name (up to 80 characters).",
+  type: "Pick API or RSS.",
+  url: "Enter a valid http(s) URL.",
+  keywords: "Up to 20 keywords, 60 characters each.",
+};
+
 function parseKeywords(raw: FormDataEntryValue | null): string[] {
   return String(raw ?? "")
     .split(",")
@@ -23,11 +30,24 @@ function parseKeywords(raw: FormDataEntryValue | null): string[] {
     .filter(Boolean);
 }
 
+/** Result of every server action in this file; `fieldErrors` keys are form field names. */
+export type ActionResult =
+  | { ok: true }
+  | { ok: false; error: string; fieldErrors?: Record<string, string> };
+
+const OK: ActionResult = { ok: true };
+const fail = (error: string, fieldErrors?: Record<string, string>): ActionResult => ({
+  ok: false,
+  error,
+  ...(fieldErrors ? { fieldErrors } : {}),
+});
+
+/** Every route that renders listings or board data. */
+const LISTING_ROUTES = ["/", "/applied", "/following", "/bangladesh"] as const;
+
 function revalidateAll() {
-  revalidatePath("/");
+  for (const p of LISTING_ROUTES) revalidatePath(p);
   revalidatePath("/boards");
-  revalidatePath("/applied");
-  revalidatePath("/following");
   // listings, boards and status all feed the shared cache
   updateTag("listings");
 }
@@ -39,10 +59,7 @@ function commit() {
 
 /** A user's own listing state changed: refresh pages + only that user's cached feeds. */
 function commitUserState(userId: string) {
-  revalidatePath("/");
-  revalidatePath("/applied");
-  revalidatePath("/following");
-  revalidatePath("/bangladesh");
+  for (const p of LISTING_ROUTES) revalidatePath(p);
   updateTag(`user-state:${userId}`);
 }
 
@@ -63,17 +80,30 @@ async function gate(admin = false): Promise<Gate> {
   }
 }
 
+/** Caller-facing message for a failed gate (no detail beyond sign-in vs. not allowed). */
+function denied(g: { status: 401 | 403 }): ActionResult {
+  return fail(g.status === 401 ? "Sign in required" : "Not allowed");
+}
+
 // ── Boards CRUD ────────────────────────────────────────────────────────────
 
-export async function addBoardAction(formData: FormData): Promise<void> {
-  if (!(await gate(true)).ok) return;
+export async function addBoardAction(formData: FormData): Promise<ActionResult> {
+  const g = await gate(true);
+  if (!g.ok) return denied(g);
   const parsed = boardSchema.safeParse({
     name: formData.get("name"),
     type: formData.get("type"),
     url: formData.get("url"),
     keywords: parseKeywords(formData.get("keywords")),
   });
-  if (!parsed.success) return;
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const key = String(issue.path[0] ?? "");
+      if (key && !fieldErrors[key]) fieldErrors[key] = FIELD_MESSAGES[key] ?? issue.message;
+    }
+    return fail("Check the highlighted fields.", fieldErrors);
+  }
   const { name, type, url, keywords } = parsed.data;
 
   try {
@@ -81,40 +111,51 @@ export async function addBoardAction(formData: FormData): Promise<void> {
       "insert into boards (name, type, url, filter_keywords) values ($1, $2, $3, $4::text::jsonb)",
       [name, type, url, JSON.stringify(keywords)],
     );
-  } catch {
-    return; // duplicate name — silently ignore for now
+  } catch (err) {
+    if ((err as { code?: string } | null)?.code === "23505") {
+      return fail("A board with that name already exists.", { name: "A board with that name already exists." });
+    }
+    console.error("[jobradar] add board failed:", err);
+    return fail("Couldn’t add the board — try again shortly.");
   }
   await commit();
+  return OK;
 }
 
-export async function updateBoardKeywordsAction(formData: FormData): Promise<void> {
-  if (!(await gate(true)).ok) return;
+export async function updateBoardKeywordsAction(formData: FormData): Promise<ActionResult> {
+  const g = await gate(true);
+  if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return;
+  if (!Number.isInteger(id)) return fail("Invalid board.");
   await run("update boards set filter_keywords = $1::text::jsonb where id = $2", [
     JSON.stringify(parseKeywords(formData.get("keywords"))),
     id,
   ]);
   await commit();
+  return OK;
 }
 
-export async function toggleBoardEnabledAction(formData: FormData): Promise<void> {
-  if (!(await gate(true)).ok) return;
+export async function toggleBoardEnabledAction(formData: FormData): Promise<ActionResult> {
+  const g = await gate(true);
+  if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return;
+  if (!Number.isInteger(id)) return fail("Invalid board.");
   await run(
     "update boards set enabled = not enabled where id = $1",
     [id],
   );
   await commit();
+  return OK;
 }
 
-export async function deleteBoardAction(formData: FormData): Promise<void> {
-  if (!(await gate(true)).ok) return;
+export async function deleteBoardAction(formData: FormData): Promise<ActionResult> {
+  const g = await gate(true);
+  if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
-  if (!Number.isInteger(id)) return;
+  if (!Number.isInteger(id)) return fail("Invalid board.");
   await run("delete from boards where id = $1", [id]); // cascades to listings
   await commit();
+  return OK;
 }
 
 /** Dry-run fetch used by the "Test" button on the boards page. */
@@ -149,13 +190,15 @@ async function pruneDefaultState(userId: string, listingId: number): Promise<voi
   );
 }
 
-export async function setListingStatusAction(formData: FormData): Promise<void> {
+export async function setListingStatusAction(formData: FormData): Promise<ActionResult> {
   const g = await gate();
-  if (!g.ok) return;
+  if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   const status = String(formData.get("status"));
   const allowed = ["new", "favorite", "applied", "hidden"] as const;
-  if (!Number.isInteger(id) || !allowed.includes(status as (typeof allowed)[number])) return;
+  if (!Number.isInteger(id) || !allowed.includes(status as (typeof allowed)[number])) {
+    return fail("Invalid listing or status.");
+  }
   await run(
     `insert into user_listing_state (user_id, listing_id, status)
      select $1::uuid, l.id, $3::text from listings l where l.id = $2::int
@@ -165,14 +208,15 @@ export async function setListingStatusAction(formData: FormData): Promise<void> 
   );
   await pruneDefaultState(g.user.id, id);
   commitUserState(g.user.id);
+  return OK;
 }
 
-export async function addUserTagAction(formData: FormData): Promise<void> {
+export async function addUserTagAction(formData: FormData): Promise<ActionResult> {
   const g = await gate();
-  if (!g.ok) return;
+  if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   const tag = String(formData.get("tag") ?? "").trim().slice(0, 40);
-  if (!Number.isInteger(id) || !tag) return;
+  if (!Number.isInteger(id) || !tag) return fail("Enter a tag.");
   await run(
     `insert into user_listing_state (user_id, listing_id, user_tags)
      select $1::uuid, l.id, jsonb_build_array($3::text) from listings l where l.id = $2::int
@@ -184,14 +228,15 @@ export async function addUserTagAction(formData: FormData): Promise<void> {
     [g.user.id, id, tag],
   );
   commitUserState(g.user.id);
+  return OK;
 }
 
-export async function removeUserTagAction(formData: FormData): Promise<void> {
+export async function removeUserTagAction(formData: FormData): Promise<ActionResult> {
   const g = await gate();
-  if (!g.ok) return;
+  if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   const tag = String(formData.get("tag") ?? "");
-  if (!Number.isInteger(id) || !tag) return;
+  if (!Number.isInteger(id) || !tag) return fail("Invalid tag.");
   await run(
     `update user_listing_state
         set user_tags = coalesce(
@@ -203,16 +248,17 @@ export async function removeUserTagAction(formData: FormData): Promise<void> {
   );
   await pruneDefaultState(g.user.id, id);
   commitUserState(g.user.id);
+  return OK;
 }
 
 // ── Followed companies ─────────────────────────────────────────────────────
 
 /** Toggle follow state for a company (insert if absent, delete if present). */
-export async function toggleFollowCompanyAction(formData: FormData): Promise<void> {
+export async function toggleFollowCompanyAction(formData: FormData): Promise<ActionResult> {
   const g = await gate();
-  if (!g.ok) return;
+  if (!g.ok) return denied(g);
   const name = String(formData.get("company") ?? "").trim().slice(0, 120);
-  if (!name) return;
+  if (!name) return fail("Invalid company.");
   const removed = await run(
     "delete from followed_companies where user_id = $1::uuid and lower(name) = lower($2)",
     [g.user.id, name],
@@ -225,16 +271,17 @@ export async function toggleFollowCompanyAction(formData: FormData): Promise<voi
     );
   }
   commitUserState(g.user.id);
+  return OK;
 }
 
 // ── Pinned countries ───────────────────────────────────────────────────────
 
 /** Toggle pin state for a country (shown in the nav bar while pinned). */
-export async function togglePinCountryAction(formData: FormData): Promise<void> {
+export async function togglePinCountryAction(formData: FormData): Promise<ActionResult> {
   const g = await gate();
-  if (!g.ok) return;
+  if (!g.ok) return denied(g);
   const name = String(formData.get("country") ?? "").trim().slice(0, 60);
-  if (!name) return;
+  if (!name) return fail("Invalid country.");
   const removed = await run(
     "delete from pinned_countries where user_id = $1::uuid and lower(name) = lower($2)",
     [g.user.id, name],
@@ -248,14 +295,15 @@ export async function togglePinCountryAction(formData: FormData): Promise<void> 
   }
   // layout renders the pinned-country nav on every route
   revalidatePath("/", "layout");
+  return OK;
 }
 
 // ── Settings ───────────────────────────────────────────────────────────────
 
 /** Keywords + sound are per user; the refresh interval is system-wide (admin only). */
-export async function saveSettingsAction(formData: FormData): Promise<void> {
+export async function saveSettingsAction(formData: FormData): Promise<ActionResult> {
   const g = await gate();
-  if (!g.ok) return;
+  if (!g.ok) return denied(g);
   await setGlobalKeywords(g.user.id, parseKeywords(formData.get("global_keywords")));
   await setUserSetting(g.user.id, "sound_enabled", formData.get("sound_enabled") === "on" ? "true" : "false");
 
@@ -265,4 +313,5 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
   }
   commitUserState(g.user.id);
   revalidatePath("/boards");
+  return OK;
 }

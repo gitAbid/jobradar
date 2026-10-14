@@ -2,8 +2,8 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useState } from "react";
-import { ChevronDown, X, Pin, SlidersHorizontal } from "lucide-react";
-import { togglePinCountryAction } from "@/app/actions";
+import { ChevronDown, X, SlidersHorizontal } from "lucide-react";
+import { PinButton } from "@/components/PinButton";
 
 export interface FacetValue {
   name: string;
@@ -107,20 +107,7 @@ function FacetSection({
                   <span className="text-xs text-slate-400">{count}</span>
                 </label>
                 {pinnable && (
-                  <form action={togglePinCountryAction}>
-                    <input type="hidden" name="country" value={name} />
-                    <button
-                      type="submit"
-                      title={pinned ? `Unpin ${name} from nav` : `Pin ${name} to nav bar`}
-                      className={`rounded p-1 transition ${
-                        pinned
-                          ? "text-emerald-600 hover:text-emerald-700"
-                          : "text-slate-300 opacity-0 hover:bg-slate-100 hover:text-slate-500 focus:opacity-100 group-hover/row:opacity-100"
-                      }`}
-                    >
-                      <Pin className={`h-3 w-3 ${pinned ? "fill-current" : ""}`} />
-                    </button>
-                  </form>
+                  <PinButton name={name} pinned={pinned} />
                 )}
               </li>
             );
