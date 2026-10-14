@@ -401,6 +401,7 @@ Sources: `node_modules/next/dist/docs/` only.
 **Acceptance:**
 - Each cron tick processes the N (env, default 4) most-stale enabled boards, using a per-board advisory lock, within `maxDuration`.
 - The cron becomes hourly.
+- Note (Hobby plan): Vercel crons may run at most daily, so `vercel.json` runs daily at 06:00 UTC and `.github/workflows/refresh-cron.yml` drives the hourly tick (needs the `CRON_SECRET` repo secret).
 - Remove the 5-minute stale heuristic.
 - `revalidateTag('listings')` runs once per tick if any rows changed.
 

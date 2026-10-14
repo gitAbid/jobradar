@@ -7,7 +7,7 @@ JobRadar aggregates job listings from many company boards and job sources into o
 - Next.js 16 (App Router, `cacheComponents`), React 19, Tailwind 4
 - Auth.js v5 (`next-auth` beta), JWT sessions, GitHub and Google providers
 - Neon Postgres via `postgres.js` (raw SQL, zod validation)
-- Deployed on Vercel (hourly cron); Playwright / Browserless for browser-based adapters
+- Deployed on Vercel (hourly refresh via GitHub Actions); Playwright / Browserless for browser-based adapters
 - Tests: vitest with PGlite (in-process Postgres)
 
 ## Setup
@@ -65,7 +65,7 @@ pnpm exec tsc --noEmit
 
 ## Cron / refresh
 
-`vercel.json` calls `/api/refresh/cron` hourly with `Authorization: Bearer $CRON_SECRET`. Each tick refreshes up to `REFRESH_BOARDS_PER_TICK` boards (fan-out) within the route's 60s budget. Admins can also trigger a refresh via `/api/refresh`.
+The Vercel Hobby plan only allows daily crons, so `vercel.json` calls `/api/refresh/cron` once a day (06:00 UTC) as a fallback, and `.github/workflows/refresh-cron.yml` calls it hourly. Both send `Authorization: Bearer $CRON_SECRET`; add a `CRON_SECRET` repository secret on GitHub with the same value as Vercel production (and optionally an `APP_URL` repository variable). Without the secret the workflow skips. Each tick refreshes up to `REFRESH_BOARDS_PER_TICK` boards (fan-out) within the route's 60s budget. Admins can also trigger a refresh via `/api/refresh`.
 
 ## Roles
 
