@@ -12,6 +12,7 @@ import { ThemeSync } from "@/components/ThemeSync";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import { UserMenu } from "@/components/UserMenu";
 import { RefreshStatusBar } from "@/components/RefreshStatusBar";
+import Link from "next/link";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -80,6 +81,13 @@ export default function RootLayout({
           {/* pages read the DB at request time (connection()); stream them under the static shell */}
           <Suspense fallback={null}>{children}</Suspense>
         </main>
+        <footer className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-xs text-muted sm:px-6">
+          <span>JobRadar</span>
+          <nav aria-label="Legal" className="flex gap-4">
+            <Link href="/privacy" className="hover:underline">Privacy</Link>
+            <Link href="/terms" className="hover:underline">Terms</Link>
+          </nav>
+        </footer>
         </ToastProvider>
       </body>
     </html>

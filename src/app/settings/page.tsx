@@ -5,6 +5,7 @@ import { requirePageUser } from "@/lib/authz";
 import { getGlobalKeywords, getTheme, isSoundEnabled } from "@/lib/settings";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { ThemeForm } from "@/components/settings/ThemeForm";
+import { AccountSection } from "./account/AccountSection";
 import { ApiKeysSection } from "./api-keys/ApiKeysSection";
 
 export const metadata = { title: "Settings" };
@@ -47,20 +48,7 @@ export default async function SettingsPage() {
 
       <ApiKeysSection userId={user.id} />
 
-      <section id="account" className="flex scroll-mt-24 flex-col gap-4">
-        <h2 className="text-lg font-bold tracking-tight text-slate-950">Account</h2>
-        <p className="text-sm text-slate-500">
-          Signed in as <span className="font-medium text-slate-900">{user.email}</span>.
-        </p>
-        <form action={logout}>
-          <button
-            type="submit"
-            className="inline-flex min-h-11 items-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          >
-            Sign out
-          </button>
-        </form>
-      </section>
+      <AccountSection email={user.email} signOutAction={logout} />
     </div>
   );
 }

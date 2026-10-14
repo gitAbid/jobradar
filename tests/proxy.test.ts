@@ -22,6 +22,8 @@ describe("isPublicPath", () => {
     ["/favicon.ico", true],
     ["/logo.png", true],
     ["/", true],
+    ["/privacy", true],
+    ["/terms", true],
     ["/onboarding", false],
     ["/manifest.webmanifest", true],
     ["/opengraph-image", true],

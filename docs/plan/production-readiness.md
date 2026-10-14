@@ -574,7 +574,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Acceptance:** the README covers setup, env vars, migrations, seed, dev, tests, deploy (Vercel and Neon), cron and the API.
 
-## P6.2 Privacy, terms, account deletion, export  [ ]   model: sonnet   depends: P5.6
+## P6.2 Privacy, terms, account deletion, export  [x]   model: sonnet   depends: P5.6
 **Files:** `src/app/(marketing)/privacy/page.tsx`, `src/app/(marketing)/terms/page.tsx`, account actions in `src/app/settings/`.
 
 **Acceptance:**

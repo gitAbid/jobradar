@@ -4,7 +4,8 @@ import { globSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const authMock = vi.fn();
-vi.mock("@/auth", () => ({ auth: () => authMock() }));
+const signOutMock = vi.fn();
+vi.mock("@/auth", () => ({ auth: () => authMock(), signOut: (...a: unknown[]) => signOutMock(...a) }));
 vi.mock("react", async (orig) => ({ ...(await orig<typeof import("react")>()), cache: <T,>(f: T) => f }));
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -43,6 +44,8 @@ vi.mock("@/lib/refresh-run-store", () => ({ readCurrentRun: () => readCurrentRun
 import { setRemoteHarness } from "@/db";
 import * as publicActions from "@/app/actions";
 import * as keyActions from "@/app/settings/api-keys/actions";
+import * as accountActions from "@/app/settings/account/actions";
+import { GET as exportGET } from "@/app/api/account/export/route";
 import { requirePageAdmin, requirePageUser } from "@/lib/authz";
 import { POST as refreshPOST } from "@/app/api/refresh/route";
 import { GET as statusGET } from "@/app/api/refresh/status/route";
@@ -150,6 +153,7 @@ const ACTIONS: Record<string, ActionCase> = {
   saveThemeAction: { admin: false, call: () => publicActions.saveThemeAction(form({ theme: "dark" })) },
   createApiKeyAction: { admin: false, call: () => keyActions.createApiKeyAction({}, form({ name: "mine" })) },
   revokeApiKeyAction: { admin: false, call: () => keyActions.revokeApiKeyAction(form({ id: "1" })) },
+  deleteAccountAction: { admin: false, call: () => accountActions.deleteAccountAction() },
 };
 
 describe("authz matrix: coverage", () => {
@@ -157,15 +161,16 @@ describe("authz matrix: coverage", () => {
     const exported = [
       ...Object.keys(publicActions),
       ...Object.keys(keyActions),
+      ...Object.keys(accountActions),
     ]
-      .filter((k) => typeof (publicActions as Record<string, unknown>)[k] === "function" || typeof (keyActions as Record<string, unknown>)[k] === "function")
+      .filter((k) => [publicActions, keyActions, accountActions].some((m) => typeof (m as Record<string, unknown>)[k] === "function"))
       .sort();
     expect(Object.keys(ACTIONS).sort()).toEqual(exported);
   });
 
   // Every /api route self-authenticates (the proxy lets /api/* through), so each
   // route file must be listed either here with its mechanism or in the matrix below.
-  const ROUTE_AUTH: Record<string, "admin" | "cron-secret" | "api-key" | "public" | "authjs"> = {
+  const ROUTE_AUTH: Record<string, "admin" | "cron-secret" | "api-key" | "public" | "authjs" | "session"> = {
     "src/app/api/refresh/route.ts": "admin",
     "src/app/api/refresh/status/route.ts": "admin",
     "src/app/api/refresh/cron/route.ts": "cron-secret",
@@ -173,6 +178,7 @@ describe("authz matrix: coverage", () => {
     "src/app/api/v1/jobs/route.ts": "api-key",
     "src/app/api/v1/jobs/[id]/route.ts": "api-key",
     "src/app/api/health/route.ts": "public",
+    "src/app/api/account/export/route.ts": "session",
     "src/app/api/auth/[...nextauth]/route.ts": "authjs",
   };
 
@@ -273,6 +279,13 @@ describe("authz matrix: routes", () => {
     asA();
     for (const res of [await post(), await statusGET()]) expect(res.status).toBe(403);
     expect(readCurrentRun).not.toHaveBeenCalled();
+  });
+
+  it("/api/account/export: 401 anonymous, 200 for a session", async () => {
+    asAnon();
+    expect((await exportGET()).status).toBe(401);
+    asA();
+    expect((await exportGET()).status).toBe(200);
   });
 
   it("/api/refresh/status: admin allowed", async () => {

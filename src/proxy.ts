@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/auth.config";
 
-const PUBLIC_PREFIXES = ["/signin", "/api/auth", "/api/v1", "/bot", "/_next"];
+const PUBLIC_PREFIXES = ["/signin", "/privacy", "/terms", "/api/auth", "/api/v1", "/bot", "/_next"];
 const PUBLIC_EXACT = new Set([
   "/api/refresh/cron",
   "/api/health",
