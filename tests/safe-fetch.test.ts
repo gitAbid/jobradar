@@ -3,15 +3,15 @@ import { EventEmitter } from "node:events";
 
 type FakeRes = { status: number; headers?: Record<string, string>; chunks?: string[] };
 const script: FakeRes[] = [];
-const seen: { host?: string; lookupAll?: unknown }[] = [];
+const seen: { host?: string; lookupAll?: unknown; headers?: Record<string, string> }[] = [];
 
 vi.mock("node:http", () => ({
-  request: (opts: { hostname: string; lookup: (h: string, o: unknown, cb: (e: unknown, a: unknown) => void) => void }, cb: (r: unknown) => void) => {
+  request: (opts: { hostname: string; headers: Record<string, string>; lookup: (h: string, o: unknown, cb: (e: unknown, a: unknown) => void) => void }, cb: (r: unknown) => void) => {
     const req = new EventEmitter() as EventEmitter & { end: () => void };
     req.end = () => {
       const f = script.shift() as FakeRes;
       opts.lookup(opts.hostname, { all: true }, (_e: unknown, a: unknown) => {
-        seen.push({ host: opts.hostname, lookupAll: a });
+        seen.push({ host: opts.hostname, lookupAll: a, headers: opts.headers });
       });
       const res = new EventEmitter() as EventEmitter & Record<string, unknown>;
       res.statusCode = f.status;
@@ -100,6 +100,21 @@ describe("safeFetch", () => {
     script.push({ status: 301, headers: { location: "/b" } }, { status: 200, chunks: ["done"] });
     const res = await safeFetch("http://ok.example/a", { resolver: pub });
     expect(await res.text()).toBe("done");
+  });
+
+  it("drops credential headers on a cross-origin redirect", async () => {
+    script.push(
+      { status: 302, headers: { location: "http://other.example/b" } },
+      { status: 200, chunks: ["ok"] },
+    );
+    await safeFetch("http://ok.example/a", {
+      resolver: pub,
+      headers: { "User-Agent": "ua", Authorization: "Basic x", "X-Api-Key": "k" },
+    });
+    expect(seen[0]?.headers).toMatchObject({ Authorization: "Basic x", "X-Api-Key": "k" });
+    expect(seen[1]?.headers).toMatchObject({ "User-Agent": "ua" });
+    expect(seen[1]?.headers).not.toHaveProperty("Authorization");
+    expect(seen[1]?.headers).not.toHaveProperty("X-Api-Key");
   });
 
   it("stops after 5 redirects", async () => {

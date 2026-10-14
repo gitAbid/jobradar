@@ -191,9 +191,10 @@ export async function safeFetch(input: string, init: SafeFetchInit = {}): Promis
       if (hop === MAX_REDIRECTS) throw new Error("too many redirects");
       const next = new URL(location, url);
       if (next.origin !== url.origin) {
-        // never leak credentials to another origin
+        // never leak credentials (Authorization, API-key headers, …) to
+        // another origin: keep only an allowlist of harmless headers
         headers = Object.fromEntries(
-          Object.entries(headers).filter(([k]) => !/^(authorization|cookie)$/i.test(k)),
+          Object.entries(headers).filter(([k]) => /^(user-agent|accept|accept-language)$/i.test(k)),
         );
       }
       url = next;
