@@ -6,9 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const pool = await loadListingsPoolSafe();
-  if (!pool.ok) return pool.error;
-  return jobDetailResponse(request, apiKeys(), id, pool.pool);
+  return jobDetailResponse(request, apiKeys(), id, loadListingsPoolSafe);
 }
 
 export { corsPreflight as OPTIONS };

@@ -120,7 +120,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test.
 
-## P1.5 Public API: auth before load, fail closed  [ ]   model: sonnet   depends: P0.4
+## P1.5 Public API: auth before load, fail closed  [x]   model: sonnet   depends: P0.4
 **Goal:** unauthenticated `/api/v1/*` requests never touch the database.
 
 **Files:** `src/lib/api/jobs.ts`, `src/app/api/v1/jobs/route.ts`, `src/app/api/v1/jobs/[id]/route.ts`, `src/app/api/v1/meta/route.ts`, `tests/api-jobs.test.ts`.

@@ -1,5 +1,4 @@
 import { attachDescriptions, LISTING_POOL_SELECT, q, rowToListing } from "@/db";
-import { getBreaker } from "@/db/remote-health";
 import { classifyRemoteError } from "@/db/translate";
 import { authenticateApiKey, type KeyStore } from "@/lib/api/keys";
 import { parseJobsQuery } from "@/lib/api/query";
@@ -29,16 +28,20 @@ export function corsPreflight(): Response {
 }
 
 async function requireAuth(request: Request, store: KeyStore): Promise<Response | null> {
-  const auth = await authenticateApiKey(request, store);
-  if (auth.ok) return null;
-  if (getBreaker().status().state === "down") {
-    // Fail open: the database just proved unreachable, so the key couldn't
-    // be validated against anything (unknown due to outage, not known-bad).
-    // Listings are public on the dashboard anyway, so serve them rather
-    // than 401 on a guess. A reachable DB with a bad key still 401s/403s.
-    console.warn(`[jobradar] v1 api: unauthenticated access allowed during DB outage (${request.url})`);
-    return null;
+  let auth;
+  try {
+    auth = await authenticateApiKey(request, store);
+  } catch (err) {
+    // Fail closed: a key we can't verify is never accepted. Real SQL bugs
+    // still throw; only an unreachable/quota-blocked DB becomes a 503.
+    if (classifyRemoteError(err) === "query") throw err;
+    console.error(
+      "[jobradar] v1 api: key verification unavailable:",
+      err instanceof Error ? err.message : err,
+    );
+    return apiError(503, "unavailable");
   }
+  if (auth.ok) return null;
   return apiError(auth.status, auth.status === 403 ? "revoked" : "unauthorized");
 }
 
@@ -55,6 +58,9 @@ export async function loadListingsPool(): Promise<FilterableListing[]> {
 export type ListingsPoolResult =
   | { ok: true; pool: FilterableListing[] }
   | { ok: false; error: Response };
+
+/** Lazily loads the pool; only invoked after the request authenticated. */
+export type PoolLoader = () => Promise<ListingsPoolResult>;
 
 /**
  * Route-level pool loader: a dead/quota-blocked database becomes an
@@ -79,7 +85,7 @@ export async function loadListingsPoolSafe(): Promise<ListingsPoolResult> {
 export async function jobsListResponse(
   request: Request,
   store: KeyStore,
-  pool: FilterableListing[],
+  loadPool: PoolLoader,
 ): Promise<Response> {
   const denied = await requireAuth(request, store);
   if (denied) return denied;
@@ -87,7 +93,9 @@ export async function jobsListResponse(
   const parsed = parseJobsQuery(request.url);
   if (!parsed.ok) return apiError(400, "invalid_params", parsed.error);
 
-  const view = buildJobView(pool, parsed.params, [], { pageSize: parsed.pageSize });
+  const loaded = await loadPool();
+  if (!loaded.ok) return loaded.error;
+  const view = buildJobView(loaded.pool, parsed.params, [], { pageSize: parsed.pageSize });
   await attachDescriptions(view.entries);
 
   return jsonResponse({
@@ -108,13 +116,15 @@ export async function jobDetailResponse(
   request: Request,
   store: KeyStore,
   idParam: string,
-  pool: FilterableListing[],
+  loadPool: PoolLoader,
 ): Promise<Response> {
   const denied = await requireAuth(request, store);
   if (denied) return denied;
 
+  const loaded = await loadPool();
+  if (!loaded.ok) return loaded.error;
   const id = Number.parseInt(idParam, 10);
-  const listing = Number.isNaN(id) ? undefined : pool.find((l) => l.id === id);
+  const listing = Number.isNaN(id) ? undefined : loaded.pool.find((l) => l.id === id);
   if (!listing || listing.status === "hidden") return apiError(404, "not_found");
   await attachDescriptions([{ listing }]);
 
@@ -129,13 +139,15 @@ export async function jobDetailResponse(
 export async function metaResponse(
   request: Request,
   store: KeyStore,
-  pool: FilterableListing[],
+  loadPool: PoolLoader,
 ): Promise<Response> {
   const denied = await requireAuth(request, store);
   if (denied) return denied;
 
+  const loaded = await loadPool();
+  if (!loaded.ok) return loaded.error;
   // No selections → facet counts over the whole non-hidden pool.
-  const view = buildJobView(pool, {}, []);
+  const view = buildJobView(loaded.pool, {}, []);
   const byParam = Object.fromEntries(
     view.facets.map((f) => [f.param as string, f.values]),
   );

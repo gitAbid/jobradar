@@ -135,7 +135,7 @@ describe("toPublicJob", () => {
 
 // ── Endpoint builders ───────────────────────────────────────────────────────
 
-import { afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 import {
   createApiKey,
   InMemoryKeyStore,
@@ -147,6 +147,7 @@ import {
   jobDetailResponse,
   jobsListResponse,
   metaResponse,
+  type PoolLoader,
 } from "@/lib/api/jobs";
 
 let store: KeyStore;
@@ -165,6 +166,10 @@ function req(path = "/api/v1/jobs", withKey = true): Request {
 
 async function body(res: Response): Promise<Record<string, unknown>> {
   return (await res.json()) as Record<string, unknown>;
+}
+
+function loader(pool: FilterableListing[]): PoolLoader {
+  return async () => ({ ok: true, pool });
 }
 
 function dataIds(json: Record<string, unknown>): number[] {
@@ -193,7 +198,7 @@ function basePool(): FilterableListing[] {
 
 describe("jobsListResponse", () => {
   it("401s without a key and includes CORS headers even on errors", async () => {
-    const res = await jobsListResponse(req("/api/v1/jobs", false), store, basePool());
+    const res = await jobsListResponse(req("/api/v1/jobs", false), store, loader(basePool()));
     expect(res.status).toBe(401);
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
     expect(await body(res)).toEqual({ error: "unauthorized" });
@@ -207,7 +212,7 @@ describe("jobsListResponse", () => {
         headers: { authorization: `Bearer ${plaintext}` },
       }),
       store,
-      basePool(),
+      loader(basePool()),
     );
     expect(res.status).toBe(403);
     expect(await body(res)).toEqual({ error: "revoked" });
@@ -219,47 +224,55 @@ describe("jobsListResponse", () => {
         headers: { authorization: "Bearer jrk_nope" },
       }),
       store,
-      basePool(),
+      loader(basePool()),
     );
     expect(res.status).toBe(401);
     expect(await body(res)).toEqual({ error: "unauthorized" });
   });
 
-  describe("outage fail-open", () => {
+  describe("auth before load", () => {
     afterEach(() => {
-      resetBreakerForTests(); // breaker is process-global: never leak it
+      resetBreakerForTests();
     });
 
-    function tripBreaker(): void {
+    it("never loads the pool for missing or invalid keys", async () => {
+      const load = vi.fn(loader(basePool()));
+      expect((await jobsListResponse(req("/api/v1/jobs", false), store, load)).status).toBe(401);
+      const bad = new Request("https://jobradar.local/api/v1/jobs", {
+        headers: { authorization: "Bearer jrk_nope" },
+      });
+      expect((await jobsListResponse(bad, store, load)).status).toBe(401);
+      expect((await metaResponse(req("/api/v1/meta", false), store, load)).status).toBe(401);
+      expect((await jobDetailResponse(req("/api/v1/jobs/1", false), store, "1", load)).status).toBe(401);
+      expect(load).not.toHaveBeenCalled();
+    });
+
+    it("503s (fail closed) when the database is down during auth", async () => {
+      const down: KeyStore = {
+        ...store,
+        findByHash: async () => {
+          throw Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
+        },
+      } as KeyStore;
+      const load = vi.fn(loader(basePool()));
+      const res = await jobsListResponse(req(), down, load);
+      expect(res.status).toBe(503);
+      expect(await body(res)).toEqual({ error: "unavailable" });
+      expect(load).not.toHaveBeenCalled();
+    });
+
+    it("does not fail open when the breaker is down", async () => {
       getBreaker().recordFailure(
         Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
         "connection",
       );
-      expect(getBreaker().status().state).toBe("down");
-    }
-
-    it("allows keyless reads while the database is down", async () => {
-      tripBreaker();
-      const res = await jobsListResponse(req("/api/v1/jobs", false), store, basePool());
-      expect(res.status).toBe(200);
-      expect(dataIds(await body(res))).toEqual([1, 2, 4]);
-    });
-
-    it("allows unvalidatable keys while the database is down", async () => {
-      tripBreaker();
-      const res = await jobsListResponse(
-        new Request("https://jobradar.local/api/v1/jobs", {
-          headers: { authorization: "Bearer jrk_cannot_verify" },
-        }),
-        store,
-        basePool(),
-      );
-      expect(res.status).toBe(200);
+      const res = await jobsListResponse(req("/api/v1/jobs", false), store, loader(basePool()));
+      expect(res.status).toBe(401);
     });
   });
 
   it("returns the default page with the pagination envelope", async () => {
-    const res = await jobsListResponse(req(), store, basePool());
+    const res = await jobsListResponse(req(), store, loader(basePool()));
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const json = await body(res);
@@ -270,33 +283,33 @@ describe("jobsListResponse", () => {
   });
 
   it("filters by remote scope, status, source, skill, and q", async () => {
-    const anywhere = await body(await jobsListResponse(req("/api/v1/jobs?remote=anywhere"), store, basePool()));
+    const anywhere = await body(await jobsListResponse(req("/api/v1/jobs?remote=anywhere"), store, loader(basePool())));
     expect(dataIds(anywhere)).toEqual([1, 4]); // 2 is onsite, 3 hidden
 
-    const favorites = await body(await jobsListResponse(req("/api/v1/jobs?status=favorite"), store, basePool()));
+    const favorites = await body(await jobsListResponse(req("/api/v1/jobs?status=favorite"), store, loader(basePool())));
     expect(favorites.pagination).toMatchObject({ total: 1 });
 
-    const source = await body(await jobsListResponse(req("/api/v1/jobs?source=Remotive"), store, basePool()));
+    const source = await body(await jobsListResponse(req("/api/v1/jobs?source=Remotive"), store, loader(basePool())));
     expect(source.pagination).toMatchObject({ total: 1 });
 
-    const skill = await body(await jobsListResponse(req("/api/v1/jobs?skill=Python"), store, basePool()));
+    const skill = await body(await jobsListResponse(req("/api/v1/jobs?skill=Python"), store, loader(basePool())));
     expect(skill.pagination).toMatchObject({ total: 1 });
 
-    const q = await body(await jobsListResponse(req("/api/v1/jobs?q=architect"), store, basePool()));
+    const q = await body(await jobsListResponse(req("/api/v1/jobs?q=architect"), store, loader(basePool())));
     expect(q.pagination).toMatchObject({ total: 1 });
   });
 
   it("paginates with pageSize and clamps out-of-range pages", async () => {
-    const p1 = await body(await jobsListResponse(req("/api/v1/jobs?pageSize=2&page=1"), store, basePool()));
+    const p1 = await body(await jobsListResponse(req("/api/v1/jobs?pageSize=2&page=1"), store, loader(basePool())));
     expect(p1.pagination).toEqual({ page: 1, pageSize: 2, total: 3, totalPages: 2 });
-    const p2 = await body(await jobsListResponse(req("/api/v1/jobs?pageSize=2&page=2"), store, basePool()));
+    const p2 = await body(await jobsListResponse(req("/api/v1/jobs?pageSize=2&page=2"), store, loader(basePool())));
     expect((p2.data as unknown[]).length).toBe(1);
-    const clamped = await body(await jobsListResponse(req("/api/v1/jobs?pageSize=2&page=99"), store, basePool()));
+    const clamped = await body(await jobsListResponse(req("/api/v1/jobs?pageSize=2&page=99"), store, loader(basePool())));
     expect(clamped.pagination).toMatchObject({ page: 2 });
   });
 
   it("400s invalid params", async () => {
-    const res = await jobsListResponse(req("/api/v1/jobs?pageSize=500"), store, basePool());
+    const res = await jobsListResponse(req("/api/v1/jobs?pageSize=500"), store, loader(basePool()));
     expect(res.status).toBe(400);
     expect(await body(res)).toHaveProperty("error", "invalid_params");
   });
@@ -309,16 +322,16 @@ describe("jobDetailResponse", () => {
   ];
 
   it("returns a single public job", async () => {
-    const res = await jobDetailResponse(req("/api/v1/jobs/1"), store, "1", detailPool());
+    const res = await jobDetailResponse(req("/api/v1/jobs/1"), store, "1", loader(detailPool()));
     expect(res.status).toBe(200);
     const json = await body(res);
     expect((json.data as { id: number }).id).toBe(1);
   });
 
   it("404s on unknown id, hidden job, and non-numeric id", async () => {
-    expect((await jobDetailResponse(req("/api/v1/jobs/9"), store, "9", detailPool())).status).toBe(404);
-    expect((await jobDetailResponse(req("/api/v1/jobs/2"), store, "2", detailPool())).status).toBe(404);
-    expect((await jobDetailResponse(req("/api/v1/jobs/abc"), store, "abc", detailPool())).status).toBe(404);
+    expect((await jobDetailResponse(req("/api/v1/jobs/9"), store, "9", loader(detailPool()))).status).toBe(404);
+    expect((await jobDetailResponse(req("/api/v1/jobs/2"), store, "2", loader(detailPool()))).status).toBe(404);
+    expect((await jobDetailResponse(req("/api/v1/jobs/abc"), store, "abc", loader(detailPool()))).status).toBe(404);
   });
 });
 
@@ -330,7 +343,7 @@ describe("metaResponse", () => {
       makeListing({ id: 3, title: "C", status: "hidden" }),
     ];
 
-    const json = await body(await metaResponse(req("/api/v1/meta"), store, pool));
+    const json = await body(await metaResponse(req("/api/v1/meta"), store, loader(pool)));
     expect(json.total).toBe(2);
     expect(json.skills).toEqual([
       { name: "Java", count: 1 },
