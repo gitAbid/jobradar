@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import { MapPin, X } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -9,6 +10,9 @@ import { togglePinCountryAction } from "@/app/actions";
 import { AppHeader } from "@/components/AppHeader";
 import { RefreshStatusBar } from "@/components/RefreshStatusBar";
 import "./globals.css";
+
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "JobRadar — your personal job search radar",
@@ -68,7 +72,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-sand text-slate-950 antialiased">
         <a className="skip-link" href="#main-content">Skip to content</a>
         <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/90 backdrop-blur-xl">

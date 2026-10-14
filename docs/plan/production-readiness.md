@@ -422,7 +422,7 @@ Sources: `node_modules/next/dist/docs/` only.
 - Local launch still works in dev.
 - The build is green.
 
-## P4.5 Scraper compliance research  [ ]   model: haiku   depends: P0.1
+## P4.5 Scraper compliance research  [x]   model: haiku   depends: P0.1
 **Question:** for each board source in `src/db/seed.ts`, what do its ToS and robots.txt say about automated access, and is there an official API or RSS feed?
 
 **Output:** `docs/research/sources-tos.md`, as a table with columns source / allowed? / API available / recommendation.
@@ -441,7 +441,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with Phases 1–2 in a worktree. P5.3 onward depends on P3.4.
 
-## P5.1 Design tokens + dark mode + font  [ ]   model: sonnet   depends: P0.4
+## P5.1 Design tokens + dark mode + font  [x]   model: sonnet   depends: P0.4
 **Files:** `src/app/globals.css`, `src/app/layout.tsx`.
 
 **Acceptance:**
