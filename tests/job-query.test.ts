@@ -305,3 +305,16 @@ describe("country backfill", () => {
     await expectParity({ country: ["Bangladesh"] }, KW, { bd: true });
   });
 });
+
+describe("driver-safe JSON params", () => {
+  // postgres.js infers a jsonb-typed param from a bare `$n::jsonb` and
+  // JSON-encodes the (already stringified) list again → a scalar, not an
+  // array ("cannot extract elements from a scalar"). PGlite doesn't, so
+  // guard the SQL shape instead.
+  it("casts list params through text", () => {
+    const sp: RawParams = { skill: ["Java"], country: "Germany", company: "Acme", source: "X" };
+    const { text } = buildFacetQuery(sp, [], new Map(), { pageSize: 20, facetLimit: 10 });
+    expect(text).not.toMatch(/\$\d+::jsonb/);
+    expect(text).toMatch(/\$\d+::text::jsonb/);
+  });
+});

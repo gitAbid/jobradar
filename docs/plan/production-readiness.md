@@ -178,7 +178,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 - Running the migrations twice is a no-op.
 - The runner holds an advisory lock.
 - The app no longer issues DDL at runtime.
-- Running against `STAGING_DATABASE_URL` works. Opus runs this, not the implementer. **PENDING: blocked on the USER ACTION (staging branch); run before P2.0a's migration is applied anywhere.**
+- Running against `STAGING_DATABASE_URL` works. Opus runs this, not the implementer. **Done 2026-10-14 on Neon branch `staging` (db `job_db`): 001–003 applied, second run a no-op.**
 
 **Gates:** tsc, lint, test, build.
 
@@ -207,11 +207,11 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 **Acceptance:**
 - Results for the same params match the old in-memory pipeline. The parity test loads migrations 001+002 into PGlite, inserts fixture listings (with tricky cases: `javascript` vs `java`, `%`/`_` in q, duplicates, hidden rows, multiple countries, remote scopes), and compares `entries` ids/order, totals, pages and facets with `buildJobView` for: q, status, remote (1/anywhere/restricted), visa, skill/country/company/source facets (incl. multi-select), global keywords, showAll, and paging (incl. out-of-range page).
 - All values are parameterized (no user input concatenated into SQL).
-- One page response from Neon is under 50 KB; log bytes in dev.
+- One page response from Neon is under 50 KB; log bytes in dev. **Measured on staging: 97–130 KB, ~95% is the 20 full descriptions (avg 4.9 KB). Accepted because the P2.0b cache reads it about once per refresh; trimming descriptions in the list view is a P5 UI decision.**
 
 **Gates:** tsc, lint, test, build.
 
-## P2.0b Shared listings cache  [ ]   model: sonnet   depends: P2.0a
+## P2.0b Shared listings cache  [x]   model: sonnet   depends: P2.0a
 **Goal:** shared listing reads hit Neon about once per refresh.
 
 **Research:** `docs/research/next16-cache.md`. Cover:
@@ -227,7 +227,7 @@ Sources: `node_modules/next/dist/docs/` only.
 **Acceptance:**
 - Shared queries (listings page, facet counts, board list) are cached under the tag `listings`. Cache keys include all filter params.
 - Per-user data is never inside a shared cache entry.
-- A test or dev log shows a second identical request runs no listings SQL.
+- A test or dev log shows a second identical request runs no listings SQL. **Verified on staging with `next start`: 5 page loads → 2 feed SQL runs (one per distinct params); repeats ~20 ms vs ~4.8 s. Feed SQL on 13.8k rows: facets 210 ms, page 56 ms server-side (was 16.6 s before the stored `country` column).**
 - `pnpm build` is green.
 
 **Design decisions (Opus, from the research):**

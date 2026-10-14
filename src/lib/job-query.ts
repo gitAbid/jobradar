@@ -146,9 +146,13 @@ class Params {
     this.values.push(value);
     return `$${this.values.length}`;
   }
-  /** string[] bound as one JSON text parameter (works on any driver, no array typing). */
+  /**
+   * string[] bound as one JSON text parameter (works on any driver, no array
+   * typing). Cast via text: a bare `$n::jsonb` makes postgres.js infer a jsonb
+   * param and JSON-encode the string again, yielding a scalar, not an array.
+   */
   json(list: string[]): string {
-    return `${this.add(JSON.stringify(list))}::jsonb`;
+    return `${this.add(JSON.stringify(list))}::text::jsonb`;
   }
 }
 
