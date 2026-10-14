@@ -278,7 +278,7 @@ Sources: `node_modules/next/dist/docs/` only.
 ## P2.4 Proper column types  [ ]   model: sonnet   depends: P2.3
 **Goal:** Postgres-native types.
 
-**Files:** `db/migrations/003_types.sql`, `src/db/index.ts` (`rowToListing`, `rowToBoard`, `insertListings`, `persistEnrichment`), `src/lib/api/keys-store.ts`, `src/lib/settings.ts`, affected tests.
+**Files:** `db/migrations/004_types.sql` (003 is taken), `src/db/index.ts` (`rowToListing`, `rowToBoard`, `insertListings`, `persistEnrichment`), `src/lib/api/keys-store.ts`, `src/lib/settings.ts`, affected tests.
 
 **Acceptance:**
 - Text timestamps become `timestamptz`, with `using` casts.
@@ -286,6 +286,12 @@ Sources: `node_modules/next/dist/docs/` only.
 - JSON-in-text columns (`tags`, `skills`, `user_tags`, `filter_keywords`) become `jsonb`.
 - The mappers return the same TypeScript types as before.
 - The migration is tested against `STAGING_DATABASE_URL`; Opus runs it.
+
+**Notes (Opus):**
+- Every SQL string in `src/` and `scripts/` that relies on the old types must change in the same card: `= 1`/`= 0` flag comparisons (`is_remote`, `visa_sponsorship`, `enabled`, …), `::jsonb` casts on text JSON columns, JSON.stringify'd writes, text timestamp comparisons (e.g. the expiry `fetched_at < $1`). `grep -rn` for each column name. You may edit any file containing such SQL (including `src/lib/job-query.ts`, `src/lib/country-backfill.ts`, `src/lib/refresh*.ts`, `src/app/**/page.tsx`, `src/app/actions.ts`, `scripts/seed.ts`); list them.
+- postgres.js returns `timestamptz` as `Date` and `jsonb` as parsed values: mappers convert back (ISO strings, string[]) so TS types and the public API output stay identical. Keep writes driver-safe: bind JSON as text and cast `$n::text::jsonb` (a bare `$n::jsonb` double-encodes in postgres.js).
+- Rebuild indexes that use the changed expressions (e.g. `idx_listings_feed`) inside the migration. Columns with defaults need `drop default` → `alter type ... using` → `set default`.
+- PGlite parity/backfill tests run all migrations, so they must keep passing unchanged in intent.
 
 **Gates:** tsc, lint, test, build.
 
