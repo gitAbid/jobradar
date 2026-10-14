@@ -1,6 +1,8 @@
 import { listFollowedCompanies, listPinnedCountries } from "@/db";
-import { getGlobalKeywords } from "@/lib/settings";
-import { requirePageUser } from "@/lib/authz";
+import { getGlobalKeywords, needsOnboarding } from "@/lib/settings";
+import { getSessionUser } from "@/lib/authz";
+import { redirect } from "next/navigation";
+import { Landing } from "@/components/marketing/Landing";
 import { FACET_LIMIT, loadJobView } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
 import { JobFeed } from "@/components/JobFeed";
@@ -29,7 +31,9 @@ export default async function DashboardPage({
   searchParams: Promise<SearchParams>;
 }) {
   await connection(); // always render at request time (DB reads must not be prerendered)
-  const user = await requirePageUser();
+  const user = await getSessionUser();
+  if (!user) return <Landing />; // signed-out visitors
+  if (await needsOnboarding(user.id)) redirect("/onboarding");
   const sp = await searchParams;
   const globalKeywords = await getGlobalKeywords(user.id);
   // one page of rows + aggregated facet counts, computed in SQL

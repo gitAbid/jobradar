@@ -8,6 +8,8 @@ import { CheckCircle2, Clock3, RadioTower, TriangleAlert } from "lucide-react";
 import { connection } from "next/server";
 import { requirePageAdmin } from "@/lib/authz";
 
+export const metadata = { title: "Boards · Admin" };
+
 export default async function BoardsPage() {
   await connection(); // request-time rendering
   await requirePageAdmin(); // enforced server-side; the nav link is only a convenience

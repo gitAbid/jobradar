@@ -1,7 +1,7 @@
 import { signIn } from "@/auth";
 import { sanitizeCallbackUrl } from "@/lib/callback-url";
 
-export const metadata = { title: "Sign in — JobRadar" };
+export const metadata = { title: "Sign in" };
 
 const ERRORS: Record<string, string> = {
   AccessDenied: "Sign-in was denied. Your email must be verified with the provider and your account enabled.",

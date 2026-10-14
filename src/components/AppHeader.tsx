@@ -50,11 +50,14 @@ export function AppHeader({
   userMenu,
   pinned,
   hasPinned = false,
+  signedOut = false,
 }: {
   isAdmin?: boolean;
   userMenu?: ReactNode;
   pinned?: ReactNode;
   hasPinned?: boolean;
+  /** Logo + user menu only (landing page visitors). */
+  signedOut?: boolean;
 }) {
   const links = isAdmin ? [...NAV_LINKS, ADMIN_LINK] : NAV_LINKS;
   return (
@@ -77,15 +80,18 @@ export function AppHeader({
           </span>
         </Link>
 
+        {!signedOut && (
         <nav className="ml-auto hidden items-center gap-1 rounded-2xl bg-slate-100/80 p-1 lg:flex" aria-label="Primary navigation">
           {links.map((link) => (
             <NavItem key={link.href} {...link} />
           ))}
         </nav>
+        )}
 
         <div className="ml-auto min-w-0 lg:ml-0">{userMenu}</div>
       </div>
 
+      {!signedOut && (
       <div
         className={`nav-scroll -mx-4 flex items-center gap-1 overflow-x-auto border-t border-slate-200/80 px-4 py-1.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] sm:-mx-6 sm:px-6 ${hasPinned ? "" : "lg:hidden"}`}
       >
@@ -104,6 +110,7 @@ export function AppHeader({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

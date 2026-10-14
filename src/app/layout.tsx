@@ -17,8 +17,14 @@ import "./globals.css";
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
+const SITE_URL =
+  process.env.AUTH_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  title: "JobRadar — your personal job search radar",
+  metadataBase: new URL(SITE_URL),
+  title: { default: "JobRadar — your personal job search radar", template: "%s · JobRadar" },
+  applicationName: "JobRadar",
   description: "Gather, filter, save, and track the job openings that fit your next move.",
 };
 
@@ -31,6 +37,7 @@ async function Header() {
     <>
       <AppHeader
         isAdmin={user?.role === "admin"}
+        signedOut={!user}
         userMenu={<UserMenu />}
         hasPinned={pinned.length > 0}
         pinned={pinned.map((country) => (

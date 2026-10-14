@@ -7,7 +7,7 @@ import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { ThemeForm } from "@/components/settings/ThemeForm";
 import { ApiKeysSection } from "./api-keys/ApiKeysSection";
 
-export const metadata = { title: "Settings · JobRadar" };
+export const metadata = { title: "Settings" };
 
 async function logout() {
   "use server";

@@ -69,3 +69,29 @@ export async function getTheme(userId: string): Promise<"system" | "light" | "da
   const v = await getUserSetting(userId, "theme");
   return v === "light" || v === "dark" ? v : "system";
 }
+
+// ── Onboarding (P5.7) ──────────────────────────────────────────────────────
+
+export const ONBOARDING_KEY = "onboarding_complete";
+
+export async function markOnboardingComplete(userId: string): Promise<void> {
+  await setUserSetting(userId, ONBOARDING_KEY, "true");
+}
+
+/**
+ * True for a brand-new account: no completion marker and no prior state of any
+ * kind (settings, pinned countries, follows, listing state). Existing users are
+ * never forced through onboarding.
+ */
+export async function needsOnboarding(userId: string): Promise<boolean> {
+  const row = await qOne<{ used: boolean }>(
+    `select (
+       exists (select 1 from user_settings where user_id = $1::uuid)
+       or exists (select 1 from pinned_countries where user_id = $1::uuid)
+       or exists (select 1 from followed_companies where user_id = $1::uuid)
+       or exists (select 1 from user_listing_state where user_id = $1::uuid)
+     ) as used`,
+    [userId],
+  );
+  return !row?.used;
+}

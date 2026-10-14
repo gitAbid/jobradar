@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/ui";
 import { ArrowUpRight, Building2, Star } from "lucide-react";
 import type { FilterableListing } from "@/lib/types";
 
+export const metadata = { title: "Following" };
+
 const FOLLOWING_LIMIT = 200;
 
 interface SearchParams {

@@ -521,7 +521,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.7 Landing, onboarding, branding  [ ]   model: sonnet   depends: P5.6
+## P5.7 Landing, onboarding, branding  [x]   model: sonnet   depends: P5.6
 **Files:**
 - `src/app/(marketing)/page.tsx` or a signed-out branch of `/`, following the routing guidance in `node_modules/next/dist/docs/`;
 - `src/app/onboarding/page.tsx`;

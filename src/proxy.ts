@@ -8,6 +8,10 @@ const PUBLIC_EXACT = new Set([
   "/api/health",
   "/robots.txt",
   "/favicon.ico",
+  "/",
+  "/manifest.webmanifest",
+  "/apple-icon",
+  "/opengraph-image",
   "/sitemap.xml",
 ]);
 const STATIC_FILE = /\.(?:ico|png|jpe?g|gif|svg|webp|avif|txt|xml|css|js|map|woff2?|ttf|otf|webmanifest)$/i;
