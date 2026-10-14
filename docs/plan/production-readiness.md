@@ -230,6 +230,13 @@ Sources: `node_modules/next/dist/docs/` only.
 - A test or dev log shows a second identical request runs no listings SQL.
 - `pnpm build` is green.
 
+**Design decisions (Opus, from the research):**
+- Enable `cacheComponents: true`; remove every `export const dynamic = "force-dynamic"` the research lists and add `await connection()` where it says. Pages keep `await connection()`.
+- Cache at the SQL layer: a `'use cache: remote'` wrapper around the feed query (`runJobQuery` with the remote executor) and `fetchListingById`, keyed by serializable args only (the normalised params object, the global-keyword list, opts). `cacheTag('listings')` + a custom `cacheLife` with revalidate ≈ 15 min as a backstop, in case a background invalidation is missed.
+- Invalidate: `revalidateTag('listings', 'max')` at the end of `executeRun` (wrap in try/catch and log: it runs in `after()`, which isn't documented as a request scope). Server actions that change listings or boards (status, tags, board CRUD/toggle) call `updateTag('listings')`. Status still lives on `listings` until Phase 3, so status actions must invalidate too.
+- Per-user data (followed companies, pinned countries) stays outside the cached function.
+- Proof: a dev-only log line inside the uncached SQL path (`[jobradar] feed SQL`). Verify with `pnpm build && pnpm start` on a spare port: request `/` twice and count the log lines (read-only queries against the configured DB are fine). Report the counts.
+
 **Gates:** tsc, lint, test, build.
 
 ## P2.0c Neon usage metrics  [ ]   model: sonnet   depends: P2.0b
