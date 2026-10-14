@@ -7,6 +7,7 @@ import { setGlobalKeywords, setSetting, setUserSetting } from "@/lib/settings";
 import { refreshBoard } from "@/lib/refresh";
 import { THEMES } from "@/lib/theme";
 import { gateAction } from "@/lib/authz";
+import { LISTINGS_TAG, userStateTag } from "@/lib/cache-tags";
 
 // ── Validation ─────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ function revalidateAll() {
   for (const p of LISTING_ROUTES) revalidatePath(p);
   revalidatePath("/admin/boards");
   // listings, boards and status all feed the shared cache
-  updateTag("listings");
+  updateTag(LISTINGS_TAG);
 }
 
 /** Writes already landed in Neon; just refresh the cached views. */
@@ -61,7 +62,7 @@ function commit() {
 /** A user's own listing state changed: refresh pages + only that user's cached feeds. */
 function commitUserState(userId: string) {
   for (const p of LISTING_ROUTES) revalidatePath(p);
-  updateTag(`user-state:${userId}`);
+  updateTag(userStateTag(userId));
 }
 
 /** Map a failed gate onto this file's ActionResult. */

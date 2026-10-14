@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { cacheLife, cacheTag } from "next/cache";
+import { LISTINGS_TAG, userStateTag } from "@/lib/cache-tags";
 import { remoteQuery } from "@/db/remote";
 import { COUNTRY_FACETS, topValues } from "@/lib/facets";
 import { BD_LOCATION_RE } from "@/lib/bd";
@@ -568,13 +569,13 @@ export async function getCachedJobView(
 ): Promise<JobView> {
   "use cache: remote";
   cacheLife(LISTINGS_LIFE);
-  cacheTag("listings", `user-state:${userId ?? "anon"}`);
+  cacheTag(LISTINGS_TAG, userStateTag(userId));
   return runJobQuery(loggedRemote("page"), sp, globalKeywords, opts, userId);
 }
 
 export async function getCachedListingById(id: number): Promise<FilterableListing | null> {
   "use cache: remote";
   cacheLife(LISTINGS_LIFE);
-  cacheTag("listings");
+  cacheTag(LISTINGS_TAG);
   return fetchListingById(loggedRemote("by-id"), id);
 }

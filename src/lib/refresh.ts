@@ -3,6 +3,7 @@ import { fetchBoardListings } from "@/lib/adapters";
 import { sanitizeTags, capDescription } from "@/lib/adapters/normalize";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
+import { LISTINGS_TAG } from "@/lib/cache-tags";
 import {
   beginTrackedRun,
   completeTrackedBoard,
@@ -123,7 +124,7 @@ async function executeRun(boards: Board[], scheduled?: ScheduledOptions): Promis
     if (changed) {
       try {
         const { revalidateTag } = await import("next/cache");
-        revalidateTag("listings", "max");
+        revalidateTag(LISTINGS_TAG, "max");
       } catch (err) {
         console.error("[jobradar] revalidateTag(listings) failed:", err);
       }
