@@ -11,7 +11,7 @@
 
 **Gates (every card):** `pnpm exec tsc --noEmit && pnpm lint && pnpm test`.
 
-**Phase start commits:** P0 `a40096e`, P1 `b5fd9f6`.
+**Phase start commits:** P0 `a40096e`, P1 `b5fd9f6`, P2 `66db546`.
 
 ---
 
