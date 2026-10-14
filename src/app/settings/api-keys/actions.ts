@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { apiKeys } from "@/lib/api/keys-store";
 import { createApiKey, revokeApiKey } from "@/lib/api/keys";
 import { classifyRemoteError } from "@/db/errors";
-import { AuthError, requireUser } from "@/lib/authz";
+import { gateAction } from "@/lib/authz";
 
 export interface CreateKeyState {
   error?: string;
@@ -17,15 +17,9 @@ export async function createApiKeyAction(
   _prev: CreateKeyState,
   formData: FormData,
 ): Promise<CreateKeyState> {
-  let user;
-  try {
-    user = await requireUser();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return { error: err.status === 401 ? "Sign in to create API keys." : "Not allowed." };
-    }
-    throw err;
-  }
+  const g = await gateAction();
+  if (!g.ok) return { error: g.message };
+  const { user } = g;
   const name = String(formData.get("name") ?? "").trim().slice(0, 80);
   if (!name) return { error: "Give the key a name — which app uses it?" };
 
@@ -47,15 +41,9 @@ export async function createApiKeyAction(
 export type RevokeKeyResult = { ok: true } | { ok: false; error: string };
 
 export async function revokeApiKeyAction(formData: FormData): Promise<RevokeKeyResult> {
-  let user;
-  try {
-    user = await requireUser();
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return { ok: false, error: err.status === 401 ? "Sign in required" : "Not allowed" };
-    }
-    throw err;
-  }
+  const g = await gateAction();
+  if (!g.ok) return { ok: false, error: g.message };
+  const { user } = g;
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { ok: false, error: "Invalid key." };
   try {

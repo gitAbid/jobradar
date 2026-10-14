@@ -2,7 +2,7 @@
 
 import { signOut } from "@/auth";
 import { run } from "@/db";
-import { AuthError, requireUser } from "@/lib/authz";
+import { gateAction } from "@/lib/authz";
 
 export type DeleteAccountResult = { ok: false; error: string };
 
@@ -13,13 +13,9 @@ export type DeleteAccountResult = { ok: false; error: string };
  * atomically. Then sign out and land on `/`.
  */
 export async function deleteAccountAction(): Promise<DeleteAccountResult | void> {
-  let user;
-  try {
-    user = await requireUser();
-  } catch (err) {
-    if (err instanceof AuthError) return { ok: false, error: "Sign in required" };
-    throw err;
-  }
+  const g = await gateAction();
+  if (!g.ok) return { ok: false, error: g.message };
+  const { user } = g;
   try {
     await run("delete from users where id = $1", [user.id]);
   } catch (err) {

@@ -6,7 +6,7 @@ import { qOne, rowToBoard, run } from "@/db";
 import { setGlobalKeywords, setSetting, setUserSetting } from "@/lib/settings";
 import { refreshBoard } from "@/lib/refresh";
 import { THEMES } from "@/lib/theme";
-import { AuthError, requireAdmin, requireUser, type SessionUser } from "@/lib/authz";
+import { gateAction } from "@/lib/authz";
 
 // ── Validation ─────────────────────────────────────────────────────────────
 
@@ -64,32 +64,15 @@ function commitUserState(userId: string) {
   updateTag(`user-state:${userId}`);
 }
 
-type Gate = { ok: true; user: SessionUser } | { ok: false; status: 401 | 403 };
-
-/**
- * Auth gate for every action. Failures map to each action's own error
- * convention (silent no-op for void actions, a generic message otherwise);
- * nothing about the failure is leaked. Anything but an AuthError is a bug and
- * propagates.
- */
-async function gate(admin = false): Promise<Gate> {
-  try {
-    return { ok: true, user: await (admin ? requireAdmin() : requireUser()) };
-  } catch (err) {
-    if (err instanceof AuthError) return { ok: false, status: err.status };
-    throw err;
-  }
-}
-
-/** Caller-facing message for a failed gate (no detail beyond sign-in vs. not allowed). */
-function denied(g: { status: 401 | 403 }): ActionResult {
-  return fail(g.status === 401 ? "Sign in required" : "Not allowed");
+/** Map a failed gate onto this file's ActionResult. */
+function denied(g: { message: string }): ActionResult {
+  return fail(g.message);
 }
 
 // ── Boards CRUD ────────────────────────────────────────────────────────────
 
 export async function addBoardAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate(true);
+  const g = await gateAction("admin");
   if (!g.ok) return denied(g);
   const parsed = boardSchema.safeParse({
     name: formData.get("name"),
@@ -124,7 +107,7 @@ export async function addBoardAction(formData: FormData): Promise<ActionResult> 
 }
 
 export async function updateBoardKeywordsAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate(true);
+  const g = await gateAction("admin");
   if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return fail("Invalid board.");
@@ -137,7 +120,7 @@ export async function updateBoardKeywordsAction(formData: FormData): Promise<Act
 }
 
 export async function toggleBoardEnabledAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate(true);
+  const g = await gateAction("admin");
   if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return fail("Invalid board.");
@@ -150,7 +133,7 @@ export async function toggleBoardEnabledAction(formData: FormData): Promise<Acti
 }
 
 export async function deleteBoardAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate(true);
+  const g = await gateAction("admin");
   if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return fail("Invalid board.");
@@ -163,10 +146,8 @@ export async function deleteBoardAction(formData: FormData): Promise<ActionResul
 export async function testBoardAction(
   boardId: number,
 ): Promise<{ ok: boolean; message: string }> {
-  const g = await gate(true);
-  if (!g.ok) {
-    return { ok: false, message: g.status === 401 ? "Sign in required" : "Not allowed" };
-  }
+  const g = await gateAction("admin");
+  if (!g.ok) return { ok: false, message: g.message };
   const row = await qOne<Record<string, unknown>>("select * from boards where id = $1", [
     boardId,
   ]);
@@ -192,7 +173,7 @@ async function pruneDefaultState(userId: string, listingId: number): Promise<voi
 }
 
 export async function setListingStatusAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate();
+  const g = await gateAction();
   if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   const status = String(formData.get("status"));
@@ -213,7 +194,7 @@ export async function setListingStatusAction(formData: FormData): Promise<Action
 }
 
 export async function addUserTagAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate();
+  const g = await gateAction();
   if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   const tag = String(formData.get("tag") ?? "").trim().slice(0, 40);
@@ -233,7 +214,7 @@ export async function addUserTagAction(formData: FormData): Promise<ActionResult
 }
 
 export async function removeUserTagAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate();
+  const g = await gateAction();
   if (!g.ok) return denied(g);
   const id = Number(formData.get("id"));
   const tag = String(formData.get("tag") ?? "");
@@ -256,7 +237,7 @@ export async function removeUserTagAction(formData: FormData): Promise<ActionRes
 
 /** Toggle follow state for a company (insert if absent, delete if present). */
 export async function toggleFollowCompanyAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate();
+  const g = await gateAction();
   if (!g.ok) return denied(g);
   const name = String(formData.get("company") ?? "").trim().slice(0, 120);
   if (!name) return fail("Invalid company.");
@@ -279,7 +260,7 @@ export async function toggleFollowCompanyAction(formData: FormData): Promise<Act
 
 /** Toggle pin state for a country (shown in the nav bar while pinned). */
 export async function togglePinCountryAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate();
+  const g = await gateAction();
   if (!g.ok) return denied(g);
   const name = String(formData.get("country") ?? "").trim().slice(0, 60);
   if (!name) return fail("Invalid country.");
@@ -306,7 +287,7 @@ export async function togglePinCountryAction(formData: FormData): Promise<Action
  * submitted them); the refresh interval is system-wide (admin only).
  */
 export async function saveSettingsAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate();
+  const g = await gateAction();
   if (!g.ok) return denied(g);
   if (formData.has("global_keywords")) {
     await setGlobalKeywords(g.user.id, parseKeywords(formData.get("global_keywords")));
@@ -325,7 +306,7 @@ export async function saveSettingsAction(formData: FormData): Promise<ActionResu
 
 /** Per-user colour theme: "system" follows the OS, otherwise forced light/dark. */
 export async function saveThemeAction(formData: FormData): Promise<ActionResult> {
-  const g = await gate();
+  const g = await gateAction();
   if (!g.ok) return denied(g);
   const theme = z.enum(THEMES).safeParse(formData.get("theme"));
   if (!theme.success) return fail("Pick system, light or dark.");

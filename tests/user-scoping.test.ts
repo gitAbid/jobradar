@@ -142,7 +142,7 @@ describe("server-side authorization", () => {
     expect((await db.query("select * from user_settings")).rows).toHaveLength(0);
     expect((await db.query("select * from boards")).rows).toHaveLength(1);
     expect(await testBoardAction(1)).toEqual({ ok: false, message: "Sign in required" });
-    expect(await createApiKeyAction({}, form({ name: "k" }))).toEqual({ error: "Sign in to create API keys." });
+    expect(await createApiKeyAction({}, form({ name: "k" }))).toEqual({ error: "Sign in required" });
     expect(updateTag).not.toHaveBeenCalled();
   });
 

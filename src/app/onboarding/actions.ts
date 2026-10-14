@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { run } from "@/db";
 import { markOnboardingComplete, setGlobalKeywords } from "@/lib/settings";
-import { AuthError, requireUser, type SessionUser } from "@/lib/authz";
+import { gateAction } from "@/lib/authz";
 
 /**
  * `href` is where to go next. The client does a full navigation there rather
@@ -11,15 +11,6 @@ import { AuthError, requireUser, type SessionUser } from "@/lib/authz";
  * onboarding (which redirected here) and would reuse it.
  */
 export type OnboardingResult = { ok: true; href: string } | { ok: false; error: string } | null;
-
-async function gate(): Promise<SessionUser | null> {
-  try {
-    return await requireUser();
-  } catch (err) {
-    if (err instanceof AuthError) return null;
-    throw err;
-  }
-}
 
 function list(raw: FormDataEntryValue | null, max: number, maxLen: number): string[] {
   const seen = new Set<string>();
@@ -36,8 +27,9 @@ function list(raw: FormDataEntryValue | null, max: number, maxLen: number): stri
 
 /** Save keywords + pinned countries, mark onboarding done, then open the pre-filtered feed. */
 export async function completeOnboardingAction(_prev: OnboardingResult, formData: FormData): Promise<OnboardingResult> {
-  const user = await gate();
-  if (!user) return { ok: false, error: "Sign in required" };
+  const g = await gateAction();
+  if (!g.ok) return { ok: false, error: g.message };
+  const { user } = g;
   const keywords = list(formData.get("keywords"), 20, 60);
   const countries = [...list(formData.getAll("country").join(","), 10, 60)];
   if (keywords.length === 0 && countries.length === 0) {
@@ -61,8 +53,9 @@ export async function completeOnboardingAction(_prev: OnboardingResult, formData
 
 /** Skip: record completion without changing any preferences. */
 export async function skipOnboardingAction(): Promise<OnboardingResult> {
-  const user = await gate();
-  if (!user) return { ok: false, error: "Sign in required" };
+  const g = await gateAction();
+  if (!g.ok) return { ok: false, error: g.message };
+  const { user } = g;
   await markOnboardingComplete(user.id);
   revalidatePath("/", "layout");
   return { ok: true, href: "/" };

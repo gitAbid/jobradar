@@ -45,6 +45,7 @@ import { setRemoteHarness } from "@/db";
 import * as publicActions from "@/app/actions";
 import * as keyActions from "@/app/settings/api-keys/actions";
 import * as accountActions from "@/app/settings/account/actions";
+import * as onboardingActions from "@/app/onboarding/actions";
 import { GET as exportGET } from "@/app/api/account/export/route";
 import { requirePageAdmin, requirePageUser } from "@/lib/authz";
 import { POST as refreshPOST } from "@/app/api/refresh/route";
@@ -154,6 +155,11 @@ const ACTIONS: Record<string, ActionCase> = {
   createApiKeyAction: { admin: false, call: () => keyActions.createApiKeyAction({}, form({ name: "mine" })) },
   revokeApiKeyAction: { admin: false, call: () => keyActions.revokeApiKeyAction(form({ id: "1" })) },
   deleteAccountAction: { admin: false, call: () => accountActions.deleteAccountAction() },
+  completeOnboardingAction: {
+    admin: false,
+    call: () => onboardingActions.completeOnboardingAction(null, form({ keywords: "java", country: "Germany" })),
+  },
+  skipOnboardingAction: { admin: false, call: () => onboardingActions.skipOnboardingAction() },
 };
 
 describe("authz matrix: coverage", () => {
@@ -162,8 +168,9 @@ describe("authz matrix: coverage", () => {
       ...Object.keys(publicActions),
       ...Object.keys(keyActions),
       ...Object.keys(accountActions),
+      ...Object.keys(onboardingActions),
     ]
-      .filter((k) => [publicActions, keyActions, accountActions].some((m) => typeof (m as Record<string, unknown>)[k] === "function"))
+      .filter((k) => [publicActions, keyActions, accountActions, onboardingActions].some((m) => typeof (m as Record<string, unknown>)[k] === "function"))
       .sort();
     expect(Object.keys(ACTIONS).sort()).toEqual(exported);
   });
@@ -218,6 +225,7 @@ describe("authz matrix: server actions", () => {
 
   it("anonymous/non-admin testBoardAction and createApiKeyAction report an error and leak nothing", async () => {
     asAnon();
+    expect(await onboardingActions.skipOnboardingAction()).toEqual({ ok: false, error: "Sign in required" });
     expect(await publicActions.testBoardAction(1)).toEqual({ ok: false, message: "Sign in required" });
     expect(await keyActions.createApiKeyAction({}, form({ name: "x" }))).toMatchObject({ error: expect.any(String) });
     asA();
