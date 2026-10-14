@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { after } from "next/server";
-import { startRefreshRun } from "@/lib/refresh";
+import { startScheduledRefresh } from "@/lib/refresh";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 
 export const maxDuration = 60;
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const started = await startRefreshRun(undefined, "scheduled");
+  const started = await startScheduledRefresh();
   if (started === null) {
     return NextResponse.json({ error: "already_running" }, { status: 409 });
   }

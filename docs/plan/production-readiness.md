@@ -395,7 +395,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 ## Phase 4 — Reliability
 
-## P4.2 Refresh fan-out  [ ]   model: sonnet   depends: P3.6
+## P4.2 Refresh fan-out  [x]   model: sonnet   depends: P3.6
 **Files:** `src/lib/refresh.ts`, `src/app/api/refresh/cron/route.ts`, `vercel.json`, `src/lib/refresh-run-store.ts`, tests.
 
 **Acceptance:**
