@@ -134,7 +134,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test.
 
-## P1.6 Security headers  [ ]   model: sonnet   depends: P1.2
+## P1.6 Security headers  [x]   model: sonnet   depends: P1.2
 **Goal:** sensible default security headers on every route.
 
 **Files:** `next.config.ts` (`headers()`).
