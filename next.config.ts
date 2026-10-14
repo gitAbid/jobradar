@@ -34,8 +34,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
-  // playwright must not be bundled — it loads its native browser launcher
-  serverExternalPackages: ["playwright"],
+  // playwright-core must not be bundled — it loads its native browser launcher
+  serverExternalPackages: ["playwright-core"],
   // playwright's registry reads browsers.json at import; Vercel's file
   // tracing drops it (not statically referenced), which breaks the dynamic
   // import inside the refresh functions — force-include it for the routes

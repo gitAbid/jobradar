@@ -1,4 +1,4 @@
-import type { Browser } from "playwright";
+import type { Browser } from "playwright-core";
 import { assertSafeUrl } from "@/lib/safe-fetch";
 
 /**
@@ -6,7 +6,7 @@ import { assertSafeUrl } from "@/lib/safe-fetch";
  * The browser is either a local launch, or — when BROWSERLESS_WS_URL is set
  * (e.g. a Browserless Cloud-Chrome endpoint) — a remote session connected
  * over CDP, which is what lets detail enrichment run on serverless where
- * local Chromium cannot. playwright itself is imported lazily too —
+ * local Chromium cannot. playwright-core itself is imported lazily too —
  * importing this module must never fail in environments where the package
  * is unavailable (serverless), so adapters can degrade gracefully.
  */
@@ -37,7 +37,7 @@ function assertBrowserAvailable(): void {
 }
 
 async function launchBrowser(): Promise<Browser> {
-  const { chromium } = await import("playwright");
+  const { chromium } = await import("playwright-core");
   const remote = process.env.BROWSERLESS_WS_URL;
   if (remote) return chromium.connectOverCDP(remote);
   return chromium.launch({ headless: true });

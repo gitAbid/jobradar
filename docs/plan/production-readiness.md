@@ -414,7 +414,7 @@ Sources: `node_modules/next/dist/docs/` only.
 - Errors are captured in Sentry.
 - Refresh failures and cron non-2xx responses are reported.
 
-## P4.4 playwright → playwright-core  [ ]   model: sonnet   depends: P0.3
+## P4.4 playwright → playwright-core  [x]   model: sonnet   depends: P0.3
 **Files:** `package.json`, `src/lib/adapters/browser.ts`, `next.config.ts` (tracing includes).
 
 **Acceptance:**
