@@ -54,3 +54,7 @@ data/
 # visual QA screenshots
 /docs/qa/
 .claude/worktrees/
+
+# playwright
+/test-results/
+/playwright-report/

@@ -582,7 +582,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 - Export downloads the user's state as JSON.
 - The privacy and terms pages are drafts, marked "review with a lawyer".
 
-## P6.3 E2E smoke in CI  [ ]   model: sonnet   depends: P5.9, P0.2
+## P6.3 E2E smoke in CI  [x]   model: sonnet   depends: P5.9, P0.2
 **Files:** `e2e/smoke.spec.ts`, `playwright.config.ts`, `.github/workflows/ci.yml`.
 
 **Acceptance:** with the credentials provider enabled only when `E2E=1`, the test signs in, filters, favorites a job, marks it applied, sees it in Saved, creates an API key and calls `/api/v1/jobs`.
