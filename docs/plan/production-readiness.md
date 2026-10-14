@@ -34,7 +34,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test, build.
 
-## P0.3 Upgrade Next.js + patch vulnerable deps  [ ]   model: sonnet   depends: P0.1
+## P0.3 Upgrade Next.js + patch vulnerable deps  [x]   model: sonnet   depends: P0.1
 **Goal:** `pnpm audit --prod` reports zero high or critical advisories.
 
 **Files:** `package.json`, `pnpm-lock.yaml`.
