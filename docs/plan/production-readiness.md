@@ -63,7 +63,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 ## Phase 1 — Security quick wins
 
-## P1.1 Fail-closed cron auth  [ ]   model: sonnet   depends: P0.4
+## P1.1 Fail-closed cron auth  [x]   model: sonnet   depends: P0.4
 **Goal:** cron endpoints reject every request when `CRON_SECRET` is missing or wrong.
 
 **Files:** `src/lib/cron-auth.ts` (new), `src/app/api/refresh/cron/route.ts`, `src/app/api/sync/blob/route.ts`, `tests/cron-auth.test.ts` (new).
