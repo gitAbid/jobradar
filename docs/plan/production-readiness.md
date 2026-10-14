@@ -20,7 +20,7 @@
 ## P0.1 Workflow + branch setup  [x] (Opus)
 Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc.
 
-## P0.2 GitHub Actions CI  [ ]   model: sonnet   depends: P0.1
+## P0.2 GitHub Actions CI  [x]   model: sonnet   depends: P0.1
 **Goal:** every push and PR runs the quality gates.
 
 **Files:** `.github/workflows/ci.yml` (new).

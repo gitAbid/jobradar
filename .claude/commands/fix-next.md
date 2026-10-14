@@ -33,7 +33,7 @@ Board: `docs/plan/production-readiness.md`. Target card: `$ARGUMENTS`. If no car
    - **Pass:**
      - `git add` the card's files.
      - Commit with `<ID>: <title>` and the `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` trailer.
-     - Tick the card `[x]` on the board, adding the short commit hash, and include that board edit in the same commit.
+     - Tick the card `[x]` on the board in the same commit (find a card's commit later with `git log --grep "^<ID>:"`).
    - **Needs fixes:** `SendMessage` the same implementer with a numbered fix list. Allow at most 2 rounds; after that, finish the card yourself.
 5. **Report** to the user in 3–5 lines: the card, what changed, the gates, and the next card (plus any USER ACTION it needs).
 
