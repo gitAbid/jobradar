@@ -77,7 +77,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test.
 
-## P1.2 Stop inlining secrets at build time  [ ]   model: sonnet   depends: P0.4
+## P1.2 Stop inlining secrets at build time  [x]   model: sonnet   depends: P0.4
 **Goal:** secrets are read at runtime only.
 
 **Files:** `next.config.ts`.
