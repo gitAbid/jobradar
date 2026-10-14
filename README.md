@@ -36,6 +36,7 @@ pnpm dev                     # http://localhost:3000
 | `CRON_SECRET` | yes for cron | Bearer secret for `/api/refresh/cron`; requests are rejected if unset |
 | `REFRESH_BOARDS_PER_TICK` | no | Boards refreshed per cron tick (default 4) |
 | `API_RATE_LIMIT_PER_HOUR` | no | Public API limit per key per hour (default 600) |
+| `API_AUTH_FAIL_LIMIT_PER_HOUR` | no | Invalid/revoked API-key attempts allowed per client IP per hour before `429` (default 30) |
 | `BROWSERLESS_WS_URL` | no | Remote Browserless websocket (with token); enables browser adapters on Vercel |
 | `JOBRADAR_DISABLE_BROWSER` | no | `1` disables browser adapters |
 | `REED_API_KEY` | no | Enables the Reed adapter |
@@ -81,7 +82,7 @@ Create a key in the app's settings, then send it as `Authorization: Bearer <key>
 
 Query params for `/jobs`: `q`, `status` (`new|favorite|applied`), `remote` (`1|anywhere|restricted`), `visa=1`, repeatable `skill`, `country`, `company`, `source`, `page` (default 1), `pageSize` (default 25, max 200).
 
-Limit: 600 requests per key per hour (override with `API_RATE_LIMIT_PER_HOUR`); exceeding it returns `429` with `Retry-After`. Errors: `401` unauthorized, `403` revoked key, `503` if verification or the rate store is unavailable (fails closed). CORS is enabled.
+Limit: 600 requests per key per hour (override with `API_RATE_LIMIT_PER_HOUR`); exceeding it returns `429` with `Retry-After`. Clients (by IP) presenting more than 30 invalid or revoked keys per hour (`API_AUTH_FAIL_LIMIT_PER_HOUR`) also get `429` with `Retry-After` until the hour ends, for every request. Errors: `401` unauthorized, `403` revoked key, `503` if verification or the rate store is unavailable (fails closed). CORS is enabled.
 
 ## Scraper policy
 

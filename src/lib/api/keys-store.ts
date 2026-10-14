@@ -1,4 +1,4 @@
-import type { KeyStore, ApiKeyRecord } from "@/lib/api/keys";
+import type { KeyStore, ApiKeyRecord, RateHit } from "@/lib/api/keys";
 import { remoteQuery, remoteRun, remoteRunReturning } from "@/db/remote";
 
 /**
@@ -87,7 +87,7 @@ class NeonKeyStore implements KeyStore {
     );
   }
 
-  async hitRate(keyId: number): Promise<{ count: number; retryAfterSeconds: number }> {
+  async hitRate(keyId: number): Promise<RateHit> {
     const rows = await remoteRunReturning<{ count: number; retry: number }>(
       `insert into api_rate (key_id, window_start, count)
          values ($1::int, date_trunc('hour', now()), 1)
@@ -100,6 +100,22 @@ class NeonKeyStore implements KeyStore {
     // Opportunistic cleanup of old windows; best-effort, never blocks the request.
     if (Math.random() < 0.01) {
       remoteRun("delete from api_rate where window_start < now() - interval '1 day'").catch(() => {});
+    }
+    return { count: Number(rows[0].count), retryAfterSeconds: Math.max(1, Number(rows[0].retry)) };
+  }
+
+  async hitAuthFailure(client: string): Promise<RateHit> {
+    const rows = await remoteRunReturning<{ count: number; retry: number }>(
+      `insert into api_auth_fail (client, window_start, count)
+         values ($1, date_trunc('hour', now()), 1)
+       on conflict (client, window_start) do update set count = api_auth_fail.count + 1
+       returning count,
+         ceil(extract(epoch from (window_start + interval '1 hour' - now())))::int as retry`,
+      [client],
+    );
+    if (!rows[0]) throw new Error("api_auth_fail upsert returned no row");
+    if (Math.random() < 0.01) {
+      remoteRun("delete from api_auth_fail where window_start < now() - interval '1 day'").catch(() => {});
     }
     return { count: Number(rows[0].count), retryAfterSeconds: Math.max(1, Number(rows[0].retry)) };
   }

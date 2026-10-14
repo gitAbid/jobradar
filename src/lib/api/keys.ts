@@ -39,7 +39,18 @@ export interface KeyStore {
    * Counts one request against the key's current fixed 1-hour window
    * (atomic). Throws when the rate store is unavailable (callers fail closed).
    */
-  hitRate(keyId: number): Promise<{ count: number; retryAfterSeconds: number }>;
+  hitRate(keyId: number): Promise<RateHit>;
+  /**
+   * Counts one failed key check (unknown, unclaimed or revoked key) against
+   * the client's current fixed 1-hour window (atomic). `client` is an opaque
+   * id (hashed IP). Throws when the store is unavailable.
+   */
+  hitAuthFailure(client: string): Promise<RateHit>;
+}
+
+export interface RateHit {
+  count: number;
+  retryAfterSeconds: number;
 }
 
 /** Reference in-memory store — used by the test suite. */
@@ -101,10 +112,18 @@ export class InMemoryKeyStore implements KeyStore {
     }
   }
 
-  async hitRate(keyId: number): Promise<{ count: number; retryAfterSeconds: number }> {
+  async hitRate(keyId: number): Promise<RateHit> {
+    return this.hit(`key:${keyId}`);
+  }
+
+  async hitAuthFailure(client: string): Promise<RateHit> {
+    return this.hit(`fail:${client}`);
+  }
+
+  private hit(id: string): RateHit {
     const now = Date.now();
     const windowStart = Math.floor(now / HOUR_MS) * HOUR_MS;
-    const k = `${keyId}:${windowStart}`;
+    const k = `${id}:${windowStart}`;
     const count = (this.rates.get(k) ?? 0) + 1;
     this.rates.set(k, count);
     return { count, retryAfterSeconds: Math.max(1, Math.ceil((windowStart + HOUR_MS - now) / 1000)) };
@@ -175,15 +194,20 @@ async function recordUsage(store: KeyStore, keyId: number): Promise<void> {
   await store.recordUsage(keyId, new Date(now).toISOString());
 }
 
+/** The key from `Authorization: Bearer <key>` (primary) or `x-api-key: <key>`, if any. */
+export function presentedApiKey(request: Request): string | null {
+  const header = request.headers.get("authorization");
+  return header?.toLowerCase().startsWith("bearer ")
+    ? header.slice(7).trim() || null
+    : (request.headers.get("x-api-key")?.trim() || null);
+}
+
 /**
- * Verifies `Authorization: Bearer <key>` (primary) or `x-api-key: <key>`.
- * Records usage for valid, non-revoked keys.
+ * Verifies the presented key (see `presentedApiKey`). Records usage for
+ * valid, non-revoked keys.
  */
 export async function authenticateApiKey(request: Request, store: KeyStore): Promise<AuthResult> {
-  const header = request.headers.get("authorization");
-  const presented = header?.toLowerCase().startsWith("bearer ")
-    ? header.slice(7).trim()
-    : (request.headers.get("x-api-key")?.trim() || null);
+  const presented = presentedApiKey(request);
   if (!presented) return { ok: false, status: 401 };
 
   const record = await store.findByHash(hashKey(presented));
