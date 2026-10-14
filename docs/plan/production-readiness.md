@@ -315,7 +315,7 @@ Sources: `node_modules/next/dist/docs/` only.
 - Create GitHub and Google OAuth apps.
 - Set `AUTH_SECRET`, `AUTH_GITHUB_ID`/`SECRET`, `AUTH_GOOGLE_ID`/`SECRET` and `ADMIN_EMAIL` locally and in Vercel.
 
-## P3.1 Auth.js research  [ ]   model: haiku   depends: P2.5
+## P3.1 Auth.js research  [x]   model: haiku   depends: P2.5
 **Question:** how should Auth.js v5 be set up on Next 16.3 (`proxy.ts`, App Router) with GitHub and Google?
 
 **Pick one adapter strategy, with reasons:**
