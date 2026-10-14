@@ -67,7 +67,7 @@ export default function RootLayout({
         {/* applies the saved theme before first paint (no flash) */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="flex min-h-dvh flex-col bg-sand text-foreground antialiased">
+      <body className="flex min-h-dvh flex-col overflow-x-clip bg-sand text-foreground antialiased">
         <ToastProvider>
         <a className="skip-link" href="#main-content">Skip to content</a>
         <header className="sticky top-0 z-40 border-b border-border bg-surface-raised/90 backdrop-blur-xl">

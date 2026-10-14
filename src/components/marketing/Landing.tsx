@@ -27,7 +27,6 @@ const CTA =
 function FeedPreview() {
   return (
     <div className="relative w-full max-w-md" aria-hidden="true">
-      <div className="absolute -inset-6 -z-10 rounded-[2rem] bg-primary/15 blur-3xl" />
       <div className="rounded-2xl border border-border bg-surface-raised/95 p-4 shadow-lg backdrop-blur sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-foreground">Matched to you</p>
@@ -78,11 +77,15 @@ function FeedPreview() {
 export function Landing() {
   return (
     <div className="flex flex-col gap-20 pb-8 sm:gap-28">
-      <section className="relative grid items-center gap-12 overflow-x-clip px-1 pt-6 sm:pt-12 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:pt-16">
+      <section className="relative grid items-center gap-12 pt-6 sm:pt-12 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:pt-16">
+        {/* Full-bleed backdrop: spans the viewport and fades out, so no glow ends on a hard edge. */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -top-24 left-1/2 -z-10 h-72 w-[40rem] max-w-full -translate-x-1/2 rounded-full bg-primary/10 blur-3xl lg:left-1/4"
-        />
+          className="pointer-events-none absolute -bottom-24 -top-32 left-1/2 -z-10 w-screen -translate-x-1/2 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]"
+        >
+          <div className="absolute -top-24 left-[20%] h-96 w-[40rem] max-w-[90vw] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+          <div className="absolute right-[10%] top-1/3 h-96 w-[36rem] max-w-[80vw] rounded-full bg-primary/10 blur-3xl" />
+        </div>
         <div className="animate-fade-up text-center lg:text-left">
           <span className="inline-flex items-center gap-2 rounded-full border border-teal-line bg-teal-soft px-3 py-1 text-xs-plus font-semibold text-teal-ink">
             <span className="relative flex h-2 w-2">
