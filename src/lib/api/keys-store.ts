@@ -48,38 +48,6 @@ function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
   };
 }
 
-const API_KEYS_DDL = `
-  create table if not exists api_keys (
-    id            integer generated always as identity primary key,
-    name          text not null,
-    key_hash      text not null unique,
-    prefix        text not null,
-    created_at    text not null,
-    last_used_at  text,
-    request_count integer not null default 0,
-    revoked_at    text
-  )
-`;
-
-let remoteSchemaReady: Promise<void> | null = null;
-
-/**
- * Belt-and-suspenders for databases whose central schema ran before
- * `api_keys` joined it. Idempotent; runs once per process. Skipped under
- * the test harness (the fake remote has a fixed schema).
- */
-function ensureRemoteApiKeysSchema(): Promise<void> {
-  remoteSchemaReady ??= (async () => {
-    if (getRemoteHarness()) return;
-    await remoteRun(API_KEYS_DDL);
-    await remoteRun(`alter table api_keys enable row level security`);
-  })().catch((err) => {
-    remoteSchemaReady = null;
-    throw err;
-  });
-  return remoteSchemaReady;
-}
-
 /** True when a remote attempt should be made (configured + breaker allows). */
 function canTryRemote(): boolean {
   if (!isRemoteConfigured() && !getRemoteHarness()) return false;
@@ -145,7 +113,6 @@ class RemoteFirstKeyStore implements KeyStore {
     createdAt: string;
   }): Promise<number> {
     const remote = await tryRemote(async () => {
-      await ensureRemoteApiKeysSchema();
       const rows = await remoteRunReturning<{ id: number }>(
         "insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4) returning id",
         [key.name, key.keyHash, key.prefix, key.createdAt],
@@ -192,7 +159,6 @@ class RemoteFirstKeyStore implements KeyStore {
 
   async list(): Promise<ApiKeyRecord[]> {
     const remote = await tryRemote(async () => {
-      await ensureRemoteApiKeysSchema();
       const rows = await remoteQuery<ApiKeyRow>("select * from api_keys order by id desc");
       return rows.map(rowToRecord);
     });
@@ -207,7 +173,6 @@ class RemoteFirstKeyStore implements KeyStore {
 
   async revoke(id: number, revokedAt: string): Promise<boolean> {
     const remote = await tryRemote(async () => {
-      await ensureRemoteApiKeysSchema();
       const count = await remoteRun(
         "update api_keys set revoked_at = $1 where id = $2 and revoked_at is null",
         [revokedAt, id],
@@ -250,7 +215,6 @@ class RemoteFirstKeyStore implements KeyStore {
 
   async findByHash(keyHash: string): Promise<ApiKeyRecord | null> {
     const remote = await tryRemote(async () => {
-      await ensureRemoteApiKeysSchema();
       const rows = await remoteQuery<ApiKeyRow>(
         "select * from api_keys where key_hash = $1",
         [keyHash],
@@ -268,7 +232,6 @@ class RemoteFirstKeyStore implements KeyStore {
 
   async recordUsage(id: number, usedAt: string): Promise<void> {
     const remote = await tryRemote(async () => {
-      await ensureRemoteApiKeysSchema();
       await remoteRun(
         "update api_keys set last_used_at = $1, request_count = request_count + 1 where id = $2",
         [usedAt, id],
@@ -297,7 +260,5 @@ export function apiKeys(): KeyStore {
   return singleton;
 }
 
-/** Reset the lazy remote-schema guard between tests. */
-export function resetApiKeysSchemaForTests(): void {
-  remoteSchemaReady = null;
-}
+/** Retained for test compatibility; schema now comes from db/migrations. */
+export function resetApiKeysSchemaForTests(): void {}

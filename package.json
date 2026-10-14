@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.ts",
+    "db:seed": "node --env-file-if-exists=.env.local scripts/seed.ts"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

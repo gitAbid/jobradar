@@ -161,7 +161,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Output:** `docs/research/migrations.md`.
 
-## P2.2 Baseline migration + seed script  [ ]   model: sonnet   depends: P2.1
+## P2.2 Baseline migration + seed script  [x]   model: sonnet   depends: P2.1
 **Goal:** schema changes go through migrations, not request-time DDL.
 
 **Files:**
@@ -178,7 +178,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 - Running the migrations twice is a no-op.
 - The runner holds an advisory lock.
 - The app no longer issues DDL at runtime.
-- Running against `STAGING_DATABASE_URL` works. Opus runs this, not the implementer.
+- Running against `STAGING_DATABASE_URL` works. Opus runs this, not the implementer. **PENDING: blocked on the USER ACTION (staging branch); run before P2.0a's migration is applied anywhere.**
 
 **Gates:** tsc, lint, test, build.
 
