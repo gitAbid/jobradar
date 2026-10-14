@@ -109,7 +109,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test.
 
-## P1.4 Validate listing URLs at ingest  [ ]   model: sonnet   depends: P0.4
+## P1.4 Validate listing URLs at ingest  [x]   model: sonnet   depends: P0.4
 **Goal:** only http(s) listing URLs are stored.
 
 **Files:** `src/lib/refresh.ts` (`upsertListings`) or `src/db/index.ts` (`insertListings` filter), `tests/refresh.test.ts`.

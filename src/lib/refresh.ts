@@ -135,11 +135,21 @@ export async function refreshBoard(
   }
 }
 
+/** Only absolute http(s) URLs are stored; anything else (javascript:, data:, relative) is dropped. */
+function isHttpUrl(url: string): boolean {
+  try {
+    const p = new URL(url).protocol;
+    return p === "http:" || p === "https:";
+  } catch {
+    return false;
+  }
+}
+
 async function upsertListings(boardId: number, listings: NormalizedListing[]): Promise<number> {
   const fetchedAt = new Date().toISOString();
   return insertListings(
     boardId,
-    listings.map((l) => ({
+    listings.filter((l) => isHttpUrl(l.url)).map((l) => ({
       externalId: l.externalId,
       title: l.title,
       company: l.company,
