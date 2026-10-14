@@ -327,8 +327,8 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Output:** `docs/research/authjs.md`.
 
-## P3.2 Multi-user schema  [ ]   model: sonnet   depends: P3.1
-**Files:** `db/migrations/004_users.sql`, `tests/`.
+## P3.2 Multi-user schema  [x]   model: sonnet   depends: P3.1
+**Files:** `db/migrations/005_users.sql`, `tests/`.
 
 **Acceptance:**
 - Auth tables as required by P3.1, plus `users.role text check in ('admin','user') default 'user'`.
