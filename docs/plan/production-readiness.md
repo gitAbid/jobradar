@@ -569,7 +569,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 ## Phase 6 — Launch
 
-## P6.1 Docs + repo hygiene  [ ]   model: sonnet   depends: P3.3
+## P6.1 Docs + repo hygiene  [x]   model: sonnet   depends: P3.3
 **Files:** `README.md`, `.env.example` (names only), `scripts/recon/` (move `recon*.mjs` there, or delete them), `docs/` index.
 
 **Acceptance:** the README covers setup, env vars, migrations, seed, dev, tests, deploy (Vercel and Neon), cron and the API.
