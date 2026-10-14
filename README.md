@@ -61,7 +61,7 @@ pnpm exec tsc --noEmit
 
 ## Deploy
 
-Vercel build command: `pnpm db:migrate && pnpm build`. Use Neon branches for staging/preview databases so previews never migrate production.
+`vercel.json` sets the build command to `pnpm db:migrate && pnpm build`, so every deploy migrates its own database. Point Preview `DATABASE_URL`/`DATABASE_URL_UNPOOLED` at a Neon staging branch so previews never migrate production.
 
 ## Cron / refresh
 
