@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowRight, Trash2, X } from "lucide-react";
+import { ArrowRight, Trash2 } from "lucide-react";
 import { addUserTagAction, removeUserTagAction } from "@/app/actions";
 import { CompanyBadge } from "@/components/CompanyBadge";
+import { TagChip } from "@/components/TagChip";
 import { StatusButton, useListingStatus } from "@/components/StatusActions";
 import { useToastedAction } from "@/components/use-toasted-action";
 import { Button } from "@/components/ui";
@@ -14,13 +15,9 @@ function RemoveTagForm({ id, tag }: { id: number; tag: string }) {
     <form action={action} className="inline">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="tag" value={tag} />
-      <button
-        disabled={pending}
-        aria-busy={pending || undefined}
-        className="inline-flex min-h-8 items-center gap-0.5 rounded-lg border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-60"
-      >
-        #{tag} <X className="h-2.5 w-2.5" />
-      </button>
+      <TagChip variant="user" removable disabled={pending}>
+        #{tag}
+      </TagChip>
     </form>
   );
 }

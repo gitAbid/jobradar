@@ -1,31 +1,12 @@
 "use client";
 
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useCallback } from "react";
+import { QUICK_FILTER_KEYS, useFacetParams } from "@/lib/use-facet-params";
 
 export function FilterBar() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const pathname = usePathname();
-
-  const setParam = useCallback(
-    (key: string, value: string) => {
-      const next = new URLSearchParams(params.toString());
-      if (value) next.set(key, value);
-      else next.delete(key);
-      next.delete("page"); // filters changed → back to first page
-      router.push(`${pathname}?${next.toString()}`);
-    },
-    [params, router, pathname],
-  );
-
-  const clearQuickFilters = useCallback(() => {
-    const next = new URLSearchParams(params.toString());
-    ["q", "status", "remote", "visa", "showAll"].forEach((key) => next.delete(key));
-    next.delete("page");
-    router.push(`${pathname}?${next.toString()}`);
-  }, [params, router, pathname]);
+  const { params, setParam, clearParams } = useFacetParams();
+  const clearQuickFilters = useCallback(() => clearParams(QUICK_FILTER_KEYS), [clearParams]);
 
   const q = params.get("q") ?? "";
   const status = params.get("status") ?? "";

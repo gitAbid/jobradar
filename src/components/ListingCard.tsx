@@ -1,79 +1,12 @@
 import { ExternalLink, MapPin, Globe, Plane, ChevronDown } from "lucide-react";
-import Link from "next/link";
 import { CompanyBadge } from "@/components/CompanyBadge";
 import { ListingStatusButtons } from "@/components/ListingStatusButtons";
-import { freshnessOf, type FreshnessTier } from "@/lib/freshness";
+import { FreshnessBadge, CARD_ACCENT } from "@/components/FreshnessBadge";
+import { Highlight } from "@/components/Highlight";
+import { TagChip } from "@/components/TagChip";
+import { freshnessOf } from "@/lib/freshness";
+import { timeAgo } from "@/lib/time";
 import type { FilterableListing } from "@/lib/types";
-
-/**
- * Freshness → presentation. Only urgent/young tiers get any treatment, and it
- * is limited to a soft left edge + faint tint (card) and a small pill (badge),
- * so the quiet majority of cards are untouched and text contrast is unchanged.
- */
-const CARD_ACCENT: Record<FreshnessTier, string> = {
-  fresh: "border-l-[3px] border-l-emerald-400/70 bg-emerald-50/40 hover:border-l-emerald-300",
-  closing: "border-l-[3px] border-l-amber-400/70 bg-amber-50/40 hover:border-l-amber-300",
-  expired: "border-l-[3px] border-l-slate-300/70",
-  recent: "",
-  aging: "",
-  unknown: "",
-};
-
-const BADGE_STYLE: Record<FreshnessTier, string> = {
-  fresh: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  closing: "border-amber-200 bg-amber-50 text-amber-800",
-  expired: "border-slate-200 bg-slate-100 text-slate-500",
-  recent: "",
-  aging: "",
-  unknown: "",
-};
-
-const BADGE_DOT: Record<FreshnessTier, string> = {
-  fresh: "bg-emerald-500",
-  closing: "bg-amber-500",
-  expired: "bg-slate-400",
-  recent: "",
-  aging: "",
-  unknown: "",
-};
-
-/** Skill chip → clicking filters the dashboard to that skill. */
-function SkillChip({ skill }: { skill: string }) {
-  return (
-    <Link
-      href={`/?q=${encodeURIComponent(skill)}`}
-      className="rounded-lg border border-teal-100 bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-700 transition-colors hover:border-teal-200 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-      title={`Show ${skill} jobs`}
-    >
-      {skill}
-    </Link>
-  );
-}
-
-function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
-  if (!text) return null;
-  const lower = text.toLowerCase();
-  const hits = keywords.filter((k) => lower.includes(k));
-  if (hits.length === 0) return <>{text}</>;
-  // split on any keyword occurrence
-  const re = new RegExp(
-    `(${hits.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-    "gi",
-  );
-  return (
-    <>
-      {text.split(re).map((part, i) =>
-        hits.includes(part.toLowerCase()) ? (
-          <mark key={i} className="rounded bg-amber-200 px-0.5 text-amber-950">
-            {part}
-          </mark>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
 
 export function ListingCard({
   listing,
@@ -104,21 +37,7 @@ export function ListingCard({
               <Highlight text={listing.title} keywords={matched} />
               <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400 transition-colors group-hover:text-teal-500" />
             </a>
-            {freshness.label && (
-              <span
-                title={
-                  freshness.tier === "expired"
-                    ? `Deadline was ${listing.deadline ? new Date(listing.deadline).toLocaleDateString() : "unspecified"}`
-                    : freshness.tier === "closing"
-                      ? `Deadline ${listing.deadline ? new Date(listing.deadline).toLocaleDateString() : ""}`
-                      : `Posted ${listing.postedAt ? new Date(listing.postedAt).toLocaleDateString() : ""}`
-                }
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${BADGE_STYLE[freshness.tier]}`}
-              >
-                <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${BADGE_DOT[freshness.tier]}`} />
-                {freshness.label}
-              </span>
-            )}
+            <FreshnessBadge freshness={freshness} postedAt={listing.postedAt} deadline={listing.deadline} />
             {listing.isRemote && listing.remoteScope === "anywhere" && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-teal-800">
                 <Globe className="h-3.5 w-3.5" /> Remote · Anywhere
@@ -154,21 +73,23 @@ export function ListingCard({
       {(listing.skills.length > 0 || listing.tags.length > 0 || listing.userTags.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {listing.skills.slice(0, 10).map((s) => (
-            <SkillChip key={s} skill={s} />
+            <TagChip key={s} variant="skill" href={`/?q=${encodeURIComponent(s)}`} title={`Show ${s} jobs`}>
+              {s}
+            </TagChip>
           ))}
           {/* raw board tags that aren't already covered by a detected skill */}
           {listing.tags
             .filter((t) => !listing.skills.some((s) => s.toLowerCase() === t.toLowerCase()))
             .slice(0, 6)
             .map((t) => (
-              <span key={t} className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+              <TagChip key={t} variant="board">
                 <Highlight text={t} keywords={matched} />
-              </span>
+              </TagChip>
             ))}
           {listing.userTags.map((t) => (
-            <span key={t} className="rounded-lg border border-violet-100 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700">
+            <TagChip key={t} variant="user">
               #{t}
-            </span>
+            </TagChip>
           ))}
         </div>
       )}
@@ -190,14 +111,4 @@ export function ListingCard({
       </div>
     </article>
   );
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diff / 86_400_000);
-  if (days > 30) return `${Math.floor(days / 30)}mo ago`;
-  if (days >= 1) return `${days}d ago`;
-  const hours = Math.floor(diff / 3_600_000);
-  if (hours >= 1) return `${hours}h ago`;
-  return "just now";
 }

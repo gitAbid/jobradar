@@ -495,7 +495,7 @@ See `docs/audit/2026-10-14-ui-audit.md`. P5.1 and P5.2 may run in parallel with 
 
 **Gates:** tsc, lint, test, build.
 
-## P5.5 Component refactor  [ ]   model: sonnet   depends: P5.3
+## P5.5 Component refactor  [x]   model: sonnet   depends: P5.3
 **Files:**
 - `src/components/FacetSidebar.tsx` is split into `FacetSection.tsx`, `MobileFilterSheet.tsx` and `src/lib/use-facet-params.ts`. The hook is shared with `FilterBar.tsx` and `Pagination.tsx`.
 - `src/components/ListingCard.tsx` is split into `FreshnessBadge.tsx`, `StatusButton.tsx` and `TagChip.tsx`.

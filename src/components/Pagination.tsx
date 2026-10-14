@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams, usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useFacetParams } from "@/lib/use-facet-params";
 
 interface Props {
   currentPage: number;
@@ -28,16 +28,9 @@ function buildPages(current: number, total: number): Array<number | "gap"> {
 }
 
 export function Pagination({ currentPage, totalPages }: Props) {
-  const params = useSearchParams();
-  const pathname = usePathname();
+  const { hrefForPage: hrefFor } = useFacetParams();
 
   if (totalPages <= 1) return null;
-
-  const hrefFor = (page: number): string => {
-    const next = new URLSearchParams(params.toString());
-    next.set("page", String(page));
-    return `${pathname}?${next.toString()}`;
-  };
 
   const navClass =
     "inline-flex min-h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition-colors hover:border-teal-300 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500";

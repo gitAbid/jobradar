@@ -1,14 +1,11 @@
 import { listFollowedCompanies, listPinnedCountries } from "@/db";
 import { getGlobalKeywords } from "@/lib/settings";
 import { requirePageUser } from "@/lib/authz";
-import { FACET_LIMIT, loadJobView, PAGE_SIZE } from "@/lib/job-view";
+import { FACET_LIMIT, loadJobView } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
-import { ListingCard } from "@/components/ListingCard";
+import { JobFeed } from "@/components/JobFeed";
 import { RefreshButton } from "@/components/RefreshButton";
 import { FacetSidebar } from "@/components/FacetSidebar";
-import { Pagination } from "@/components/Pagination";
-import { EmptyState } from "@/components/ui";
-import { hasActiveFilters } from "@/lib/empty-state";
 import { connection } from "next/server";
 import { ArrowUpRight, BriefcaseBusiness, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -106,51 +103,7 @@ export default async function DashboardPage({
 
           <FilterBar />
 
-          {view.entries.length === 0 ? (
-            hasActiveFilters(sp) ? (
-              <EmptyState
-                variant="filtered"
-                title="No openings match these filters"
-                description="Your filters are narrower than the data. Loosen or clear them to see more."
-                clearFilters={
-                  <Link href="/" className="inline-flex min-h-11 items-center rounded-lg border border-border-strong bg-surface-raised px-4 text-sm font-semibold text-foreground hover:bg-surface">
-                    Clear filters
-                  </Link>
-                }
-              />
-            ) : (
-              <EmptyState
-                title="No matches just yet"
-                description="Refresh your boards for the latest openings, or add a new source if you want to widen the radar."
-                action={
-                  <>
-                    <RefreshButton />
-                    <Link href="/boards" className="inline-flex min-h-11 items-center rounded-lg border border-border-strong bg-surface-raised px-4 text-sm font-semibold text-foreground hover:bg-surface">
-                      Add a board
-                    </Link>
-                  </>
-                }
-              />
-            )
-          ) : (
-            <>
-              <div className="flex flex-col gap-3">
-                {view.entries.map(({ listing, matched }) => (
-                  <ListingCard
-                    key={listing.id}
-                    listing={listing}
-                    matched={matched}
-                    followedCompanies={followedCompanies}
-                  />
-                ))}
-              </div>
-              <p className="text-center text-xs font-medium text-slate-400">
-                Showing {(view.currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(view.currentPage * PAGE_SIZE, view.totalVisible)} of {view.totalVisible}
-              </p>
-              <Pagination currentPage={view.currentPage} totalPages={view.totalPages} />
-            </>
-          )}
+          <JobFeed view={view} searchParams={sp} followedCompanies={followedCompanies} />
         </div>
       </div>
     </div>
