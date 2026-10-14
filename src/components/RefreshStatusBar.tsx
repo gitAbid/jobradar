@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw, X } from "lucide-react";
 import { beep } from "@/lib/beep";
@@ -46,8 +46,16 @@ export function RefreshStatusBar({ soundEnabled }: { soundEnabled: boolean }) {
     router.refresh();
   }, [state.completedRunId, soundEnabled, inserted, router]);
 
-  const summaryFresh =
-    run?.finishedAt != null && Date.now() - new Date(run.finishedAt).getTime() < SUMMARY_FRESH_MS;
+  // Freshness is decided in a timer callback (not during render) so render stays pure.
+  const finishedAt = run?.finishedAt ?? null;
+  const [freshFinishedAt, setFreshFinishedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (finishedAt == null) return;
+    if (Date.now() - new Date(finishedAt).getTime() >= SUMMARY_FRESH_MS) return;
+    const timer = setTimeout(() => setFreshFinishedAt(finishedAt), 0);
+    return () => clearTimeout(timer);
+  }, [finishedAt]);
+  const summaryFresh = finishedAt != null && freshFinishedAt === finishedAt;
   const showSummary = !active && run?.finishedAt != null && summaryFresh && run.finishedAt !== state.dismissedFinishedAt;
 
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { q, qOne, rowToBoard, run } from "@/db";
+import { qOne, rowToBoard, run } from "@/db";
 import { flushBlobOps } from "@/lib/blob-sync";
 import { setGlobalKeywords, setSetting } from "@/lib/settings";
 import { refreshBoard } from "@/lib/refresh";

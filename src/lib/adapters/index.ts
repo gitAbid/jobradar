@@ -23,7 +23,7 @@ import {
   parseJapanDevDetail,
   capDescription,
 } from "@/lib/adapters/normalize";
-import { decodeEntities, isTechTitle, parseArcJobs, parseArcDetail, parseEasyJobsApi, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseRelocateMe, parseRelocateMeDetail, parseRiseupLabs, parseRiseupLabsDetail, parseSkillJobs, parseSkillJobsDetail, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
+import { decodeEntities, isTechTitle, parseArcJobs, parseArcDetail, parseEasyJobsApi, parseNextJobzDetail, parseNextJobzSitemap, parseRelocateMe, parseRelocateMeDetail, parseRiseupLabs, parseRiseupLabsDetail, parseSkillJobs, parseSkillJobsDetail, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
 import { knownEnrichedExternalIds, persistEnrichment, q } from "@/db";
 import type { EnrichPatch } from "@/db";
 import { buildSearchText } from "@/lib/filters";

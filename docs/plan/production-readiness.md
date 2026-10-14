@@ -11,7 +11,7 @@
 
 **Gates (every card):** `pnpm exec tsc --noEmit && pnpm lint && pnpm test`.
 
-**Phase start commits:** P0 `a40096e`.
+**Phase start commits:** P0 `a40096e`, P1 (next).
 
 ---
 
@@ -47,7 +47,7 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test, build.
 
-## P0.4 Lint clean + vitest config  [ ]   model: sonnet   depends: P0.1
+## P0.4 Lint clean + vitest config  [x]   model: sonnet   depends: P0.1
 **Goal:** `pnpm lint` exits with 0 errors and 0 warnings.
 
 **Files:** `src/components/RefreshStatusBar.tsx`, `src/app/actions.ts`, `src/lib/adapters/index.ts`, `vitest.config.ts` → `vitest.config.mts`.
