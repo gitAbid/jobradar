@@ -1,4 +1,4 @@
-import { listFollowedCompanies, q, rowToListing } from "@/db";
+import { LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing } from "@/db";
 import type { FilterableListing, ListingStatus } from "@/lib/types";
 import {
   addUserTagAction,
@@ -39,7 +39,7 @@ export default async function AppliedPage() {
     await Promise.all(
       COLUMNS.map(async (col) => {
         const rows = await q<Record<string, unknown>>(
-          `select l.*, b.name as board_name
+          `select ${LISTING_POOL_SELECT}, b.name as board_name
            from listings l join boards b on b.id = l.board_id
            where l.status = $1
            order by coalesce(l.posted_at, l.fetched_at) desc

@@ -143,6 +143,7 @@ export class LocalStore {
     db.exec("pragma journal_mode = WAL");
     db.exec("pragma synchronous = NORMAL");
     db.exec("pragma foreign_keys = ON");
+    db.exec("pragma busy_timeout = 5000");
     db.exec(DDL);
   }
 
@@ -175,6 +176,14 @@ export class LocalStore {
   /** Raw `?`-placeholder lookup for internal modules (outbox normalization). */
   select(sqliteSql: string, values: unknown[] = []): Record<string, unknown>[] {
     return this.raw(sqliteSql, values).rows;
+  }
+
+  /**
+   * Flush the WAL into the main database file so the file on disk is a
+   * complete, self-contained snapshot (required before file-level backup).
+   */
+  checkpoint(): void {
+    this.db.exec("pragma wal_checkpoint(TRUNCATE)");
   }
 
   // ── Outbox queue (statements waiting to replay to Postgres) ──────────────
@@ -380,19 +389,62 @@ export class LocalStore {
 // only lose the local cache, not the whole process. The global holds `null`
 // after a failed open so later calls don't retry a hopeless environment.
 
-declare const globalThis: { __jobradarLocalStore?: LocalStore | null };
+declare const globalThis: {
+  __jobradarLocalStore?: LocalStore | null;
+  __jobradarFallbackStore?: LocalStore | null;
+  __jobradarFallbackOpening?: Promise<LocalStore | null> | null;
+};
 
 /** Escape hatch: LOCAL_FIRST=0 restores plain remote-direct behavior. */
 export function isLocalFirstEnabled(): boolean {
-  return process.env.LOCAL_FIRST !== "0";
+  if (process.env.LOCAL_FIRST === "1") return true;
+  if (process.env.LOCAL_FIRST === "0") return false;
+  // Serverless filesystems (Vercel, Lambda) are ephemeral per instance: a
+  // SQLite mirror in /tmp or the read-only cwd cannot retain data across
+  // requests, so every instance would serve its own empty copy. Default to
+  // remote-direct there so Neon stays the single source of truth.
+  if (process.env.VERCEL === "1" || process.env.AWS_LAMBDA_FUNCTION_NAME) return false;
+  return true;
 }
 
 let opening: Promise<LocalStore | null> | null = null;
 
-export async function getLocalStore(): Promise<LocalStore | null> {
-  if (!isLocalFirstEnabled()) {
+export interface LocalStoreOptions {
+  /**
+   * Open the store even when local-first is disabled (serverless). Used by
+   * the Blob backup layer, which manages its own remote-first routing and
+   * only needs the file as an offline fallback + snapshot vessel.
+   */
+  force?: boolean;
+}
+
+export async function getLocalStore(opts: LocalStoreOptions = {}): Promise<LocalStore | null> {
+  if (!isLocalFirstEnabled() && !opts.force) {
     globalThis.__jobradarLocalStore = null;
     return null;
+  }
+  // The Blob fallback keeps its own handle: sharing the local-first
+  // singleton would alias the disabled `null` and leak across modes.
+  if (opts.force && isLocalFirstEnabled()) return getLocalStore();
+  if (opts.force) {
+    if (globalThis.__jobradarFallbackStore !== undefined)
+      return globalThis.__jobradarFallbackStore;
+    globalThis.__jobradarFallbackOpening ??= (async () => {
+      try {
+        const { DatabaseSync } = await import("node:sqlite");
+        const dbPath = localDbPathFromEnv();
+        const store = new LocalStore(new DatabaseSync(dbPath) as unknown as SqliteDatabase, dbPath);
+        globalThis.__jobradarFallbackStore = store;
+        return store;
+      } catch (err) {
+        console.warn("[jobradar] fallback store unavailable:", err instanceof Error ? err.message : err);
+        globalThis.__jobradarFallbackStore = null;
+        return null;
+      } finally {
+        globalThis.__jobradarFallbackOpening = null;
+      }
+    })();
+    return globalThis.__jobradarFallbackOpening;
   }
   if (globalThis.__jobradarLocalStore !== undefined) return globalThis.__jobradarLocalStore;
   opening ??= (async () => {
@@ -419,4 +471,7 @@ export async function getLocalStore(): Promise<LocalStore | null> {
 export function closeLocalStoreForTests(): void {
   globalThis.__jobradarLocalStore?.close();
   globalThis.__jobradarLocalStore = undefined;
+  globalThis.__jobradarFallbackStore?.close();
+  globalThis.__jobradarFallbackStore = undefined;
+  globalThis.__jobradarFallbackOpening = null;
 }

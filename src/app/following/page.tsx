@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import Link from "next/link";
-import { listFollowedCompanies, q, rowToListing } from "@/db";
+import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing } from "@/db";
 import { toggleFollowCompanyAction } from "@/app/actions";
 import { ListingCard } from "@/components/ListingCard";
 import { ArrowUpRight, Building2, Heart, Star, X } from "lucide-react";
@@ -35,7 +35,7 @@ export default async function FollowingPage({
   // Capped: a prolific company shouldn't produce an unbounded page.
   const rows = followed.length
     ? await q<Record<string, unknown>>(
-        `select l.*, b.name as board_name
+        `select ${LISTING_POOL_SELECT}, b.name as board_name
          from listings l join boards b on b.id = l.board_id
          where exists (
            select 1 from followed_companies fc
@@ -49,6 +49,7 @@ export default async function FollowingPage({
     : [];
 
   const listings = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
+  await attachDescriptions(listings.map((listing) => ({ listing })));
   const followedSet = new Set(followed.map((n) => n.toLowerCase()));
 
   // Accurate per-company opening counts (unaffected by the feed cap above).

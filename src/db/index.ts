@@ -15,6 +15,13 @@ import {
 import { getBreaker } from "@/db/remote-health";
 import { getLocalStore, type LocalStore } from "@/db/local-store";
 import { drainOutbox, ensureFreshLocal, persistBreakerState } from "@/db/sync";
+import {
+  bufferBlobOps,
+  drainBlobOps,
+  ensureFallbackStore,
+  isBlobServeMode,
+} from "@/lib/blob-sync";
+import type { OutboxOp } from "@/db/outbox";
 
 // ── Local-first query router ───────────────────────────────────────────────
 //
@@ -81,30 +88,59 @@ async function readRows<T>(
   if (entry && entry.gen === cacheGen() && Date.now() - entry.at < MEMORY_TTL_MS) {
     return entry.rows as T[];
   }
+  const remember = (rows: Record<string, unknown>[]): T[] => {
+    cache().set(key, { at: Date.now(), gen: cacheGen(), rows });
+    if (cache().size > MEMORY_MAX_ENTRIES) cache().clear();
+    return rows as T[];
+  };
 
   const store = await localStore();
-  if (store) {
-    // initial hydration / throttled catch-up; trips the breaker when Neon
-    // is unreachable so the mirror keeps serving without latency
+  if (store && !isBlobServeMode()) {
+    // local-first read path (long-lived hosts): mirror → remote hydration
     await ensureFreshLocal().catch(() => {});
     try {
-      const rows = store.exec(query, params).rows;
-      cache().set(key, { at: Date.now(), gen: cacheGen(), rows });
-      if (cache().size > MEMORY_MAX_ENTRIES) cache().clear();
-      return rows as T[];
+      return remember(store.exec(query, params).rows);
     } catch (err) {
       console.error("[jobradar] local read failed, trying remote:", err);
     }
+  }
+
+  // Remote-first (serverless remote-direct, or Blob serve mode): the remote
+  // is the authority. While the breaker is open we skip the 6 s timeout and
+  // serve from the Blob-seeded fallback straight away.
+  const breaker = getBreaker();
+  if (isBlobServeMode() && !breaker.canAttempt()) {
+    const fallback = await ensureFallbackStore().catch(() => null);
+    if (fallback) {
+      try {
+        return remember(fallback.exec(query, params).rows);
+      } catch (err) {
+        console.error("[jobradar] fallback read failed:", err);
+      }
+    }
+    throw new Error("Database unreachable and no local backup is available");
   }
 
   // remote-direct mode (no on-device store) or local read failure
   try {
     const rows = await remoteQuery<T>(query, params);
     getBreaker().recordSuccess();
-    return rows;
+    return remember(rows as Record<string, unknown>[]);
   } catch (err) {
     const cls = classifyRemoteError(err);
-    if (cls !== "query") getBreaker().recordFailure(err, cls);
+    if (cls === "query") throw err;
+    getBreaker().recordFailure(err, cls);
+    if (isBlobServeMode()) {
+      const fallback = await ensureFallbackStore().catch(() => null);
+      if (fallback) {
+        try {
+          console.warn("[jobradar] serving read from Blob-backed fallback");
+          return remember(fallback.exec(query, params).rows);
+        } catch (fbErr) {
+          console.error("[jobradar] fallback read failed:", fbErr);
+        }
+      }
+    }
     throw err;
   }
 }
@@ -120,11 +156,12 @@ async function enqueueForSync(
   store: LocalStore,
   query: string,
   params: unknown[],
-): Promise<void> {
-  if (/\bunnest\s*\(/i.test(query)) return;
+): Promise<OutboxOp | null> {
+  if (/\bunnest\s*\(/i.test(query)) return null;
   const { toOutboxOp } = await import("@/db/outbox");
   const op = toOutboxOp(query, params, store);
   store.enqueue(op.kind === "sql" ? "sql" : "op", op);
+  return op;
 }
 
 async function writeRows(
@@ -137,14 +174,18 @@ async function writeRows(
   let localCount: number | undefined;
   let localRows: Record<string, unknown>[] | undefined;
 
-  if (store && !translated.skipLocal) {
+  const doLocalWrite = (s: LocalStore): void => {
     try {
-      const res = store.exec(query, params);
+      const res = s.exec(query, params);
       localCount = res.changes;
       localRows = res.rows;
     } catch (err) {
       console.error("[jobradar] local write failed:", err);
     }
+  };
+
+  if (store && !translated.skipLocal && !isBlobServeMode()) {
+    doLocalWrite(store);
   }
 
   const settleLocal = (): { rows: Record<string, unknown>[]; count: number } => {
@@ -152,11 +193,43 @@ async function writeRows(
     return { rows: localRows ?? [], count: localCount ?? 0 };
   };
 
-  if (!isRemoteConfigured()) return settleLocal();
+  /**
+   * Blob offline write (serverless only): open the snapshot-seeded fallback,
+   * apply the write, queue it locally and buffer the op for Blob upload so
+   * the mutation survives the instance.
+   */
+  const writeOffline = async (): Promise<{ rows: Record<string, unknown>[]; count: number } | null> => {
+    if (!isBlobServeMode()) return null;
+    const fallback = await ensureFallbackStore().catch(() => null);
+    if (!fallback) return null;
+    if (!translated.skipLocal) doLocalWrite(fallback);
+    const op = await enqueueForSync(fallback, query, params).catch(() => null);
+    if (op) bufferBlobOps(op);
+    return settleLocal();
+  };
+
+  const queueOrBuffer = async (s: LocalStore | null): Promise<void> => {
+    if (s) {
+      const op = await enqueueForSync(s, query, params).catch(() => null);
+      if (op) bufferBlobOps(op);
+    } else {
+      await writeOffline();
+    }
+  };
+
+  if (!isRemoteConfigured()) {
+    if (!store) await writeOffline();
+    return settleLocal();
+  }
 
   const breaker = getBreaker();
   if (!breaker.canAttempt()) {
-    if (store) await enqueueForSync(store, query, params);
+    if (store) {
+      const op = await enqueueForSync(store, query, params).catch(() => null);
+      if (op) bufferBlobOps(op);
+    } else {
+      await writeOffline();
+    }
     return settleLocal();
   }
 
@@ -186,7 +259,9 @@ async function writeRows(
     );
     if (store) {
       persistBreakerState(store);
-      await enqueueForSync(store, query, params);
+      await queueOrBuffer(store);
+    } else {
+      await writeOffline();
     }
     return settleLocal();
   }
@@ -195,12 +270,70 @@ async function writeRows(
 /** After a successful write, opportunistically flush anything still queued. */
 async function kickDrain(): Promise<void> {
   const store = await localStore();
-  if (!store || store.queueDepth() === 0) return;
-  if (getBreaker().status().state !== "up") return;
-  await drainOutbox(store).catch(() => {});
+  if (store && store.queueDepth() > 0 && getBreaker().status().state === "up") {
+    await drainOutbox(store).catch(() => {});
+  }
+  // Blob backlog rides along (throttled + breaker-gated inside, no-op
+  // without a connected store) — this is the line that fires on serverless,
+  // where there is no local store to gate on.
+  await drainBlobOps().catch(() => {});
 }
 
 // ── Query helpers (the app's entire data surface) ──────────────────────────
+
+/**
+ * Pool-pruned listing columns for list views and the public API.
+ *
+ * `description` (~9 MB across the table) and `search_text` (~3 MB) dominate
+ * row bytes but are never used by filtering, facets, search or cards — only
+ * the expandable details of the ~20 visible rows need `description`
+ * (fetched second via `qDescriptionsByIds`). Every dashboard page and API
+ * hit used to pull the full table (~12 MB from Neon); the pruned pool is
+ * ~0.5 MB. `rowToListing` tolerates the missing keys (defaults "").
+ */
+export const LISTING_POOL_SELECT = [
+  "l.id",
+  "l.board_id",
+  "l.external_id",
+  "l.title",
+  "l.company",
+  "l.location",
+  "l.is_remote",
+  "l.visa_sponsorship",
+  "l.remote_scope",
+  "l.tags",
+  "l.skills",
+  "l.url",
+  "l.posted_at",
+  "l.deadline",
+  "l.fetched_at",
+  "l.status",
+  "l.user_tags",
+].join(", ");
+
+/** Descriptions for one page of visible rows — small and bounded. */
+export async function qDescriptionsByIds(ids: number[]): Promise<Map<number, string>> {
+  const unique = [...new Set(ids.filter((n) => Number.isInteger(n)))];
+  if (unique.length === 0) return new Map();
+  const placeholders = unique.map((_, i) => `$${i + 1}`).join(", ");
+  const rows = await q<{ id: number; description: string }>(
+    `select id, description from listings where id in (${placeholders})`,
+    unique,
+  );
+  return new Map(
+    rows.map((r) => [Number(r.id), typeof r.description === "string" ? r.description : ""]),
+  );
+}
+
+/** Patch descriptions onto already-paginated view entries (mutates in place). */
+export async function attachDescriptions<
+  T extends { listing: { id: number; description: string } },
+>(entries: T[]): Promise<T[]> {
+  if (entries.length === 0) return entries;
+  const byId = await qDescriptionsByIds(entries.map((e) => e.listing.id));
+  for (const e of entries) e.listing.description = byId.get(e.listing.id) ?? "";
+  return entries;
+}
 
 /** Run a query and return all rows. */
 export async function q<T = Record<string, unknown>>(
@@ -276,7 +409,7 @@ const INSERT_COLUMNS = [
 export async function insertListings(boardId: number, rows: NewListingRow[]): Promise<number> {
   const valid = rows.filter((r) => r.title && r.url); // skip malformed entries
   let inserted = 0;
-  const CHUNK = 20;
+  const CHUNK = 50;
   for (let i = 0; i < valid.length; i += CHUNK) {
     const chunk = valid.slice(i, i + CHUNK);
     const params: unknown[] = [];

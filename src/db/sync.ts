@@ -53,7 +53,7 @@ function drop(reason: string): void {
 }
 
 /** Replay one normalized op. Throws on connection/limit errors to stop the drain. */
-async function replayOp(op: OutboxOp): Promise<void> {
+export async function replayOp(op: OutboxOp): Promise<void> {
   switch (op.kind) {
     case "sql":
       await remoteRun(op.sql, op.params);
@@ -106,6 +106,14 @@ async function replayOp(op: OutboxOp): Promise<void> {
         `insert into listings (${columns.join(", ")}) values ${tuples.join(", ")}
          on conflict (board_id, external_id) do nothing`,
         params,
+      );
+      return;
+    }
+    case "api-key-insert": {
+      await remoteRun(
+        `insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4)
+         on conflict (key_hash) do nothing`,
+        [op.name, op.keyHash, op.prefix, op.createdAt],
       );
       return;
     }
@@ -173,7 +181,7 @@ declare const globalThis: {
   __jobradarSelfHealChain?: Promise<unknown>;
 };
 
-async function pullSnapshot(): Promise<Snapshot> {
+export async function pullSnapshot(): Promise<Snapshot> {
   const [boards, listings, appSettings, followedCompanies, pinnedCountries, apiKeys] =
     await Promise.all([
       remoteQuery("select * from boards"),

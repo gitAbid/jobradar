@@ -65,6 +65,14 @@ async function executeRun(boards: Board[]): Promise<RefreshSummary> {
     };
   } finally {
     await finishTrackedRun();
+    // durably buffer any ops captured while Neon was unreachable (no-op
+    // without a Blob store; request-scoped callers also flush via after())
+    try {
+      const { flushBlobOps } = await import("@/lib/blob-sync");
+      await flushBlobOps();
+    } catch {
+      // best-effort
+    }
   }
 }
 

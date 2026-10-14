@@ -1,4 +1,4 @@
-import { listFollowedCompanies, listPinnedCountries, q, rowToListing } from "@/db";
+import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, listPinnedCountries, q, rowToListing } from "@/db";
 import { getGlobalKeywords } from "@/lib/settings";
 import type { FilterableListing } from "@/lib/types";
 import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
@@ -37,8 +37,10 @@ export default async function DashboardPage({
   const sp = await searchParams;
   const [globalKeywords, rows] = await Promise.all([
     getGlobalKeywords(),
+    // pruned pool (no description/search_text) + descriptions for the visible
+    // page only — see LISTING_POOL_SELECT
     q<Record<string, unknown>>(
-      `select l.*, b.name as board_name, b.filter_keywords as board_filter_keywords
+      `select ${LISTING_POOL_SELECT}, b.name as board_name, b.filter_keywords as board_filter_keywords
        from listings l join boards b on b.id = l.board_id
        order by coalesce(l.posted_at, l.fetched_at) desc`,
     ),
@@ -46,6 +48,7 @@ export default async function DashboardPage({
 
   const pool = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
   const view = buildJobView(pool, sp, globalKeywords);
+  await attachDescriptions(view.entries);
   const followedCompanies = new Set((await listFollowedCompanies()).map((n) => n.toLowerCase()));
   const pinnedCountries = (await listPinnedCountries()).map((n) => n.toLowerCase());
 

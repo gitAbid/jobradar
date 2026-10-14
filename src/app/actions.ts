@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { q, qOne, rowToBoard, run } from "@/db";
+import { flushBlobOps } from "@/lib/blob-sync";
 import { setGlobalKeywords, setSetting } from "@/lib/settings";
 import { refreshBoard } from "@/lib/refresh";
 
@@ -29,6 +30,20 @@ function revalidateAll() {
   revalidatePath("/following");
 }
 
+/**
+ * Durably buffer this request's mutations to Blob (no-op without a
+ * connected store) before revalidating, so a serverless instance dying
+ * right after the response can't take the writes with it.
+ */
+async function commit() {
+  try {
+    await flushBlobOps();
+  } catch {
+    // buffering is best-effort; the request's own writes already landed
+  }
+  revalidateAll();
+}
+
 // ── Boards CRUD ────────────────────────────────────────────────────────────
 
 export async function addBoardAction(formData: FormData): Promise<void> {
@@ -49,7 +64,7 @@ export async function addBoardAction(formData: FormData): Promise<void> {
   } catch {
     return; // duplicate name — silently ignore for now
   }
-  revalidateAll();
+  await commit();
 }
 
 export async function updateBoardKeywordsAction(formData: FormData): Promise<void> {
@@ -59,7 +74,7 @@ export async function updateBoardKeywordsAction(formData: FormData): Promise<voi
     JSON.stringify(parseKeywords(formData.get("keywords"))),
     id,
   ]);
-  revalidateAll();
+  await commit();
 }
 
 export async function toggleBoardEnabledAction(formData: FormData): Promise<void> {
@@ -69,14 +84,14 @@ export async function toggleBoardEnabledAction(formData: FormData): Promise<void
     "update boards set enabled = case when enabled = 1 then 0 else 1 end where id = $1",
     [id],
   );
-  revalidateAll();
+  await commit();
 }
 
 export async function deleteBoardAction(formData: FormData): Promise<void> {
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return;
   await run("delete from boards where id = $1", [id]); // cascades to listings
-  revalidateAll();
+  await commit();
 }
 
 /** Dry-run fetch used by the "Test" button on the boards page. */
@@ -89,7 +104,7 @@ export async function testBoardAction(
   if (!row) return { ok: false, message: "Board not found" };
   const board = rowToBoard(row as never);
   const outcome = await refreshBoard(board);
-  revalidateAll();
+  await commit();
   return outcome.ok
     ? { ok: true, message: `OK · Fetched ${outcome.fetched} listings (${outcome.inserted} new)` }
     : { ok: false, message: `Failed · ${outcome.error ?? "Unknown error"}` };
@@ -103,7 +118,7 @@ export async function setListingStatusAction(formData: FormData): Promise<void> 
   const allowed = ["new", "favorite", "applied", "hidden"] as const;
   if (!Number.isInteger(id) || !allowed.includes(status as (typeof allowed)[number])) return;
   await run("update listings set status = $1 where id = $2", [status, id]);
-  revalidateAll();
+  await commit();
 }
 
 export async function addUserTagAction(formData: FormData): Promise<void> {
@@ -123,7 +138,7 @@ export async function addUserTagAction(formData: FormData): Promise<void> {
   }
   if (!tags.includes(tag)) tags.push(tag);
   await run("update listings set user_tags = $1 where id = $2", [JSON.stringify(tags), id]);
-  revalidateAll();
+  await commit();
 }
 
 export async function removeUserTagAction(formData: FormData): Promise<void> {
@@ -145,7 +160,7 @@ export async function removeUserTagAction(formData: FormData): Promise<void> {
     JSON.stringify(tags.filter((t) => t !== tag)),
     id,
   ]);
-  revalidateAll();
+  await commit();
 }
 
 // ── Followed companies ─────────────────────────────────────────────────────
@@ -166,7 +181,7 @@ export async function toggleFollowCompanyAction(formData: FormData): Promise<voi
       new Date().toISOString(),
     ]);
   }
-  revalidateAll();
+  await commit();
 }
 
 // ── Pinned countries ───────────────────────────────────────────────────────
@@ -187,6 +202,11 @@ export async function togglePinCountryAction(formData: FormData): Promise<void> 
     ]);
   }
   // layout renders the pinned-country nav on every route
+  try {
+    await flushBlobOps();
+  } catch {
+    // best-effort (see commit)
+  }
   revalidatePath("/", "layout");
 }
 
@@ -199,5 +219,5 @@ export async function saveSettingsAction(formData: FormData): Promise<void> {
     await setSetting("refresh_interval_hours", String(Math.floor(hours)));
   }
   await setSetting("sound_enabled", formData.get("sound_enabled") === "on" ? "true" : "false");
-  revalidateAll();
+  await commit();
 }

@@ -135,12 +135,13 @@ describe("toPublicJob", () => {
 
 // ── Endpoint builders ───────────────────────────────────────────────────────
 
-import { beforeEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import {
   createApiKey,
   InMemoryKeyStore,
   type KeyStore,
 } from "@/lib/api/keys";
+import { getBreaker, resetBreakerForTests } from "@/db/remote-health";
 import {
   corsPreflight,
   jobDetailResponse,
@@ -210,6 +211,51 @@ describe("jobsListResponse", () => {
     );
     expect(res.status).toBe(403);
     expect(await body(res)).toEqual({ error: "revoked" });
+  });
+
+  it("401s an unknown key while the database is reachable", async () => {
+    const res = await jobsListResponse(
+      new Request("https://jobradar.local/api/v1/jobs", {
+        headers: { authorization: "Bearer jrk_nope" },
+      }),
+      store,
+      basePool(),
+    );
+    expect(res.status).toBe(401);
+    expect(await body(res)).toEqual({ error: "unauthorized" });
+  });
+
+  describe("outage fail-open", () => {
+    afterEach(() => {
+      resetBreakerForTests(); // breaker is process-global: never leak it
+    });
+
+    function tripBreaker(): void {
+      getBreaker().recordFailure(
+        Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+        "connection",
+      );
+      expect(getBreaker().status().state).toBe("down");
+    }
+
+    it("allows keyless reads while the database is down", async () => {
+      tripBreaker();
+      const res = await jobsListResponse(req("/api/v1/jobs", false), store, basePool());
+      expect(res.status).toBe(200);
+      expect(dataIds(await body(res))).toEqual([1, 2, 4]);
+    });
+
+    it("allows unvalidatable keys while the database is down", async () => {
+      tripBreaker();
+      const res = await jobsListResponse(
+        new Request("https://jobradar.local/api/v1/jobs", {
+          headers: { authorization: "Bearer jrk_cannot_verify" },
+        }),
+        store,
+        basePool(),
+      );
+      expect(res.status).toBe(200);
+    });
   });
 
   it("returns the default page with the pagination envelope", async () => {

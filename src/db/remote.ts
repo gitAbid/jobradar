@@ -104,6 +104,17 @@ export function ensureSchema(): Promise<void> {
         );
         create unique index if not exists uq_pinned_countries_name
           on pinned_countries (lower(name));
+
+        create table if not exists api_keys (
+          id            integer generated always as identity primary key,
+          name          text not null,
+          key_hash      text not null unique,
+          prefix        text not null,
+          created_at    text not null,
+          last_used_at  text,
+          request_count integer not null default 0,
+          revoked_at    text
+        );
       `);
 
       // Tables live in the API-exposed `public` schema; RLS with no policies
@@ -115,6 +126,7 @@ export function ensureSchema(): Promise<void> {
         alter table app_settings enable row level security;
         alter table followed_companies enable row level security;
         alter table pinned_countries enable row level security;
+        alter table api_keys enable row level security;
       `);
 
       await db.unsafe(

@@ -1,5 +1,5 @@
-import { listPinnedCountries, q, rowToListing } from "@/db";
-import { isBangladeshRelevant } from "@/lib/bd";
+import { attachDescriptions, LISTING_POOL_SELECT, listPinnedCountries, q, rowToListing } from "@/db";
+import { bdPrefilterWhere, isBangladeshRelevant } from "@/lib/bd";
 import { getGlobalKeywords } from "@/lib/settings";
 import type { FilterableListing } from "@/lib/types";
 import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
@@ -36,9 +36,12 @@ export default async function BangladeshPage({
   const sp = await searchParams;
   const [globalKeywords, rows] = await Promise.all([
     getGlobalKeywords(),
+    // SQL prefilter (superset) + pruned columns + search_text for the exact
+    // JS recheck: transfers only BD-candidate rows instead of the full table
     q<Record<string, unknown>>(
-      `select l.*, b.name as board_name, b.filter_keywords as board_filter_keywords
+      `select ${LISTING_POOL_SELECT}, l.search_text, b.name as board_name, b.filter_keywords as board_filter_keywords
        from listings l join boards b on b.id = l.board_id
+       where ${bdPrefilterWhere()}
        order by coalesce(l.posted_at, l.fetched_at) desc`,
     ),
   ]);
@@ -48,6 +51,7 @@ export default async function BangladeshPage({
   ).filter(isBangladeshRelevant);
 
   const view = buildJobView(pool, sp, globalKeywords);
+  await attachDescriptions(view.entries);
 
   return (
     <div className="flex flex-col gap-5">

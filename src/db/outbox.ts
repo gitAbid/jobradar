@@ -45,6 +45,7 @@ export type OutboxOp =
       onlyWhenUnenriched?: boolean;
     }
   | { kind: "listings-insert"; boardName: string; rows: Record<string, unknown>[] }
+  | { kind: "api-key-insert"; name: string; keyHash: string; prefix: string; createdAt: string }
   | { kind: "api-key-update"; keyHash: string; fields: Record<string, unknown> };
 
 const collapse = (sql: string) => sql.trim().replace(/\s+/g, " ");
@@ -175,6 +176,25 @@ export function toOutboxOp(query: string, params: unknown[], store: LocalStore):
         return { kind: "listings-insert", boardName: name, rows };
       }
     }
+  }
+
+  // ── api key inserts → idempotent replay keyed by key_hash ──────────────
+  // Local and remote id sequences are independent, so a verbatim replay of
+  // `insert ... returning id` would resurrect the wrong id and fail on a
+  // retried timeout that actually committed (unique key_hash). Replay as an
+  // idempotent insert instead; revoke/usage ops re-resolve by hash.
+  const keyInsert =
+    /^insert into api_keys \(name, key_hash, prefix, created_at\) values \(\$\d+, \$\d+, \$\d+, \$\d+\)( returning id)?$/i.exec(
+      sql,
+    );
+  if (keyInsert) {
+    return {
+      kind: "api-key-insert",
+      name: String(params[0]),
+      keyHash: String(params[1]),
+      prefix: String(params[2]),
+      createdAt: String(params[3]),
+    };
   }
 
   // ── api key stats/revoke by row id → keyed by key_hash ──────────────────
