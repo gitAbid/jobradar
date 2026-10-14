@@ -1,5 +1,6 @@
 import type { Browser } from "playwright-core";
-import { assertSafeUrl } from "@/lib/safe-fetch";
+import { assertSafeUrl, BOT_UA } from "@/lib/safe-fetch";
+import { isAllowedByRobots, RobotsDisallowedError } from "@/lib/robots";
 
 /**
  * Lazy singleton headless Chromium for scraping JS-rendered career pages.
@@ -13,8 +14,6 @@ import { assertSafeUrl } from "@/lib/safe-fetch";
 
 declare const globalThis: { __jobradarBrowser?: Browser };
 
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 
 /**
  * Local headless Chromium cannot run on serverless (no browser binaries,
@@ -55,12 +54,13 @@ export async function getBrowser(): Promise<Browser> {
 export async function renderPage(url: string, waitMs = 4000): Promise<string> {
   assertBrowserAvailable();
   const browser = await getBrowser();
-  const ctx = await browser.newContext({ userAgent: UA });
+  const ctx = await browser.newContext({ userAgent: BOT_UA });
   try {
     const page = await ctx.newPage();
     // Checked outside the goto .catch so a blocked URL throws. Cannot pin DNS or
     // vet in-browser redirects/subresources.
     await assertSafeUrl(url);
+    if (!(await isAllowedByRobots(url))) throw new RobotsDisallowedError(url);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     return await page.content();
@@ -73,12 +73,13 @@ export async function renderPage(url: string, waitMs = 4000): Promise<string> {
 export async function renderText(url: string, waitMs = 3500): Promise<string> {
   assertBrowserAvailable();
   const browser = await getBrowser();
-  const ctx = await browser.newContext({ userAgent: UA });
+  const ctx = await browser.newContext({ userAgent: BOT_UA });
   try {
     const page = await ctx.newPage();
     // Checked outside the goto .catch so a blocked URL throws. Cannot pin DNS or
     // vet in-browser redirects/subresources.
     await assertSafeUrl(url);
+    if (!(await isAllowedByRobots(url))) throw new RobotsDisallowedError(url);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     return await page.evaluate(() => document.body.innerText ?? "");

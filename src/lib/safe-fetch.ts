@@ -13,6 +13,15 @@ import net from "node:net";
 export type ResolvedAddress = { address: string; family: 4 | 6 };
 export type Resolver = (host: string) => Promise<ResolvedAddress[]>;
 
+const APP_URL =
+  process.env.APP_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
+/** Honest crawler identity used for every outbound scrape. */
+export const BOT_UA = `JobRadarBot/1.0 (+${APP_URL.replace(/\/+$/, "")}/bot)`;
+
 export const MAX_BODY_BYTES = 10 * 1024 * 1024;
 export const MAX_REDIRECTS = 5;
 

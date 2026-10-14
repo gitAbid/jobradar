@@ -52,3 +52,4 @@ data/
 
 # visual QA screenshots
 /docs/qa/
+.claude/worktrees/

@@ -86,7 +86,8 @@ export const SEED_BOARDS: Array<{
   },
   {
     // UK board with a free jobseeker API — needs REED_API_KEY (Basic auth),
-    // so seeded disabled; enable once the key is configured
+    // so seeded disabled; enable once the key is configured. Also: reed.co.uk
+    // robots.txt has `Disallow: /api/` for all agents (see docs/research/sources-tos.md)
     name: "Reed (UK)",
     type: "api",
     url: "https://www.reed.co.uk/api/1.0/search?keywords=developer&resultsToTake=100",
@@ -105,10 +106,12 @@ export const SEED_BOARDS: Array<{
     keywords: [],
   },
   {
+    // disabled: tokyodev.com answers 403 to our bot UA (robots.txt itself allows /jobs)
     name: "TokyoDev",
     type: "scrape",
     url: "https://www.tokyodev.com/jobs",
     keywords: [],
+    enabled: false,
   },
 
   {
@@ -130,10 +133,12 @@ export const SEED_BOARDS: Array<{
     keywords: [],
   },
   {
+    // disabled: api.smartrecruiters.com robots.txt is `User-agent: *` / `Disallow: /`
     name: "Craftsmen (careers)",
     type: "api",
     url: "https://api.smartrecruiters.com/v1/companies/CraftsmenLtd/postings",
     keywords: [],
+    enabled: false,
   },
 
   // ── Bangladesh sources (server-rendered HTML scrapers) ─────────────────
@@ -221,10 +226,12 @@ export const SEED_BOARDS: Array<{
   },
   // IoT/telecom tech company hiring via SmartRecruiters (host dispatch above)
   {
+    // disabled: api.smartrecruiters.com robots.txt is `User-agent: *` / `Disallow: /`
     name: "Bondstein Technologies (careers)",
     type: "api",
     url: "https://api.smartrecruiters.com/v1/companies/BondsteinTechnologiesLtd/postings",
     keywords: [],
+    enabled: false,
   },
   {
     name: "Daraz (careers)",

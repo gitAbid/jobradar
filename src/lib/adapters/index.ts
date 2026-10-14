@@ -26,13 +26,12 @@ import {
 import { decodeEntities, isTechTitle, parseArcJobs, parseArcDetail, parseEasyJobsApi, parseNextJobzDetail, parseNextJobzSitemap, parseRelocateMe, parseRelocateMeDetail, parseRiseupLabs, parseRiseupLabsDetail, parseSkillJobs, parseSkillJobsDetail, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
 import { knownEnrichedExternalIds, persistEnrichment, q } from "@/db";
 import type { EnrichPatch } from "@/db";
-import { safeFetch } from "@/lib/safe-fetch";
+import { BOT_UA, safeFetch } from "@/lib/safe-fetch";
+import { isAllowedByRobots, RobotsDisallowedError } from "@/lib/robots";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
 
 const TIMEOUT_MS = 15_000;
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) JobRadar/1.0 (+https://localhost)";
 
 /**
  * Wall-clock budget for browser-based detail enrichment. Serverless
@@ -67,11 +66,12 @@ async function fetchJson(url: string): Promise<unknown> {
 }
 
 async function fetchText(url: string, headers: Record<string, string> = {}): Promise<string> {
+  if (!(await isAllowedByRobots(url))) throw new RobotsDisallowedError(url);
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await safeFetch(url, {
-        headers: { "User-Agent": UA, Accept: "application/json, text/xml, */*", ...headers },
+        headers: { "User-Agent": BOT_UA, Accept: "application/json, text/xml, */*", ...headers },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);

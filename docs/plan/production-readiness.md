@@ -427,7 +427,7 @@ Sources: `node_modules/next/dist/docs/` only.
 
 **Output:** `docs/research/sources-tos.md`, as a table with columns source / allowed? / API available / recommendation.
 
-## P4.6 Honest UA + robots.txt  [ ]   model: sonnet   depends: P4.5, P1.3
+## P4.6 Honest UA + robots.txt  [x]   model: sonnet   depends: P4.5, P1.3
 **Files:** `src/lib/safe-fetch.ts`, `src/lib/adapters/*`, `src/lib/adapters/browser.ts`.
 
 **Acceptance:**
