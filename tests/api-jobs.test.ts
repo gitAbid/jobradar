@@ -147,7 +147,7 @@ import {
   jobDetailResponse,
   jobsListResponse,
   metaResponse,
-  type PoolLoader,
+  type FeedLoader,
 } from "@/lib/api/jobs";
 
 let store: KeyStore;
@@ -168,8 +168,15 @@ async function body(res: Response): Promise<Record<string, unknown>> {
   return (await res.json()) as Record<string, unknown>;
 }
 
-function loader(pool: FilterableListing[]): PoolLoader {
-  return async () => ({ ok: true, pool });
+/** In-memory feed over a fixed pool (the oracle pipeline). */
+function loader(pool: FilterableListing[]): FeedLoader {
+  return async () => ({
+    ok: true,
+    feed: {
+      view: async (params, opts) => buildJobView(pool, params, [], opts),
+      byId: async (id) => pool.find((l) => l.id === id) ?? null,
+    },
+  });
 }
 
 function dataIds(json: Record<string, unknown>): number[] {

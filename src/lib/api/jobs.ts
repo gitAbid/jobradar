@@ -1,9 +1,10 @@
-import { attachDescriptions, LISTING_POOL_SELECT, q, rowToListing } from "@/db";
+import { remoteQuery } from "@/db/remote";
 import { classifyRemoteError } from "@/db/translate";
 import { authenticateApiKey, type KeyStore } from "@/lib/api/keys";
 import { parseJobsQuery } from "@/lib/api/query";
 import { toPublicJob } from "@/lib/api/serialize";
-import { buildJobView } from "@/lib/job-view";
+import { loadJobView, type JobView, type RawParams } from "@/lib/job-view";
+import { fetchListingById } from "@/lib/job-query";
 import type { FilterableListing } from "@/lib/types";
 
 // ── Shared response plumbing ────────────────────────────────────────────────
@@ -45,39 +46,64 @@ async function requireAuth(request: Request, store: KeyStore): Promise<Response 
   return apiError(auth.status, auth.status === 403 ? "revoked" : "unauthorized");
 }
 
-/** The listings pool joined with board names — pruned columns (see LISTING_POOL_SELECT). */
-export async function loadListingsPool(): Promise<FilterableListing[]> {
-  const rows = await q<Record<string, unknown>>(
-    `select ${LISTING_POOL_SELECT}, b.name as board_name, b.filter_keywords as board_filter_keywords
-     from listings l join boards b on b.id = l.board_id
-     order by coalesce(l.posted_at, l.fetched_at) desc`,
-  );
-  return rows.map((r) => rowToListing(r as never)) as FilterableListing[];
+/**
+ * What the v1 endpoints read: one page + facets for a filter set, or one
+ * listing by id. SQL-backed in production (no full-table reads); tests can
+ * inject an in-memory implementation.
+ */
+export interface FeedSource {
+  view(params: RawParams, opts: { pageSize?: number }): Promise<JobView>;
+  byId(id: number): Promise<FilterableListing | null>;
 }
 
-export type ListingsPoolResult =
-  | { ok: true; pool: FilterableListing[] }
+export const sqlFeedSource: FeedSource = {
+  view: (params, opts) => loadJobView(params, [], { pageSize: opts.pageSize }),
+  byId: (id) => fetchListingById((text, values) => remoteQuery(text, values), id),
+};
+
+export type FeedResult =
+  | { ok: true; feed: FeedSource }
   | { ok: false; error: Response };
 
-/** Lazily loads the pool; only invoked after the request authenticated. */
-export type PoolLoader = () => Promise<ListingsPoolResult>;
+/** Lazily resolves the feed; only invoked after the request authenticated. */
+export type FeedLoader = () => Promise<FeedResult>;
 
 /**
- * Route-level pool loader: a dead/quota-blocked database becomes an
- * actionable 503 JSON instead of an empty 500. Real SQL bugs still throw
- * (they must surface, never masquerade as downtime).
+ * Route-level feed loader. Errors from the DB surface per call (see
+ * `guardFeed`), so this only hands out the SQL-backed source.
  */
-export async function loadListingsPoolSafe(): Promise<ListingsPoolResult> {
-  try {
-    return { ok: true, pool: await loadListingsPool() };
-  } catch (err) {
-    if (classifyRemoteError(err) === "query") throw err;
-    console.error(
-      "[jobradar] v1 api: listings pool unavailable:",
-      err instanceof Error ? err.message : err,
-    );
-    return { ok: false, error: apiError(503, "unavailable", "database unreachable") };
-  }
+export async function loadFeedSafe(): Promise<FeedResult> {
+  return { ok: true, feed: guardFeed(sqlFeedSource) };
+}
+
+/**
+ * Wraps a feed so a dead/quota-blocked database becomes an actionable 503
+ * JSON instead of an empty 500. Real SQL bugs still throw (they must
+ * surface, never masquerade as downtime).
+ */
+export class FeedUnavailableError extends Error {}
+
+function guardFeed(feed: FeedSource): FeedSource {
+  const guard = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (err) {
+      if (classifyRemoteError(err) === "query") throw err;
+      console.error(
+        "[jobradar] v1 api: listings unavailable:",
+        err instanceof Error ? err.message : err,
+      );
+      throw new FeedUnavailableError("database unreachable");
+    }
+  };
+  return {
+    view: (params, opts) => guard(() => feed.view(params, opts)),
+    byId: (id) => guard(() => feed.byId(id)),
+  };
+}
+
+function unavailable(): Response {
+  return apiError(503, "unavailable", "database unreachable");
 }
 
 // ── GET /api/v1/jobs ────────────────────────────────────────────────────────
@@ -85,7 +111,7 @@ export async function loadListingsPoolSafe(): Promise<ListingsPoolResult> {
 export async function jobsListResponse(
   request: Request,
   store: KeyStore,
-  loadPool: PoolLoader,
+  loadFeed: FeedLoader,
 ): Promise<Response> {
   const denied = await requireAuth(request, store);
   if (denied) return denied;
@@ -93,10 +119,15 @@ export async function jobsListResponse(
   const parsed = parseJobsQuery(request.url);
   if (!parsed.ok) return apiError(400, "invalid_params", parsed.error);
 
-  const loaded = await loadPool();
+  const loaded = await loadFeed();
   if (!loaded.ok) return loaded.error;
-  const view = buildJobView(loaded.pool, parsed.params, [], { pageSize: parsed.pageSize });
-  await attachDescriptions(view.entries);
+  let view: JobView;
+  try {
+    view = await loaded.feed.view(parsed.params, { pageSize: parsed.pageSize });
+  } catch (err) {
+    if (err instanceof FeedUnavailableError) return unavailable();
+    throw err;
+  }
 
   return jsonResponse({
     data: view.entries.map((e) => toPublicJob(e.listing)),
@@ -116,17 +147,24 @@ export async function jobDetailResponse(
   request: Request,
   store: KeyStore,
   idParam: string,
-  loadPool: PoolLoader,
+  loadFeed: FeedLoader,
 ): Promise<Response> {
   const denied = await requireAuth(request, store);
   if (denied) return denied;
 
-  const loaded = await loadPool();
+  const loaded = await loadFeed();
   if (!loaded.ok) return loaded.error;
   const id = Number.parseInt(idParam, 10);
-  const listing = Number.isNaN(id) ? undefined : loaded.pool.find((l) => l.id === id);
+  // postgres int4 range; anything else cannot exist
+  if (Number.isNaN(id) || id < 1 || id > 2_147_483_647) return apiError(404, "not_found");
+  let listing: FilterableListing | null;
+  try {
+    listing = await loaded.feed.byId(id);
+  } catch (err) {
+    if (err instanceof FeedUnavailableError) return unavailable();
+    throw err;
+  }
   if (!listing || listing.status === "hidden") return apiError(404, "not_found");
-  await attachDescriptions([{ listing }]);
 
   return jsonResponse({
     data: toPublicJob(listing),
@@ -139,15 +177,21 @@ export async function jobDetailResponse(
 export async function metaResponse(
   request: Request,
   store: KeyStore,
-  loadPool: PoolLoader,
+  loadFeed: FeedLoader,
 ): Promise<Response> {
   const denied = await requireAuth(request, store);
   if (denied) return denied;
 
-  const loaded = await loadPool();
+  const loaded = await loadFeed();
   if (!loaded.ok) return loaded.error;
   // No selections → facet counts over the whole non-hidden pool.
-  const view = buildJobView(loaded.pool, {}, []);
+  let view: JobView;
+  try {
+    view = await loaded.feed.view({}, { pageSize: 1 });
+  } catch (err) {
+    if (err instanceof FeedUnavailableError) return unavailable();
+    throw err;
+  }
   const byParam = Object.fromEntries(
     view.facets.map((f) => [f.param as string, f.values]),
   );

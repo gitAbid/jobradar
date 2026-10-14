@@ -1,7 +1,6 @@
-import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, listPinnedCountries, q, rowToListing } from "@/db";
+import { listFollowedCompanies, listPinnedCountries } from "@/db";
 import { getGlobalKeywords } from "@/lib/settings";
-import type { FilterableListing } from "@/lib/types";
-import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
+import { FACET_LIMIT, loadJobView, PAGE_SIZE } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -35,20 +34,9 @@ export default async function DashboardPage({
 }) {
   await connection(); // always render at request time (DB reads must not be prerendered)
   const sp = await searchParams;
-  const [globalKeywords, rows] = await Promise.all([
-    getGlobalKeywords(),
-    // pruned pool (no description/search_text) + descriptions for the visible
-    // page only — see LISTING_POOL_SELECT
-    q<Record<string, unknown>>(
-      `select ${LISTING_POOL_SELECT}, b.name as board_name, b.filter_keywords as board_filter_keywords
-       from listings l join boards b on b.id = l.board_id
-       order by coalesce(l.posted_at, l.fetched_at) desc`,
-    ),
-  ]);
-
-  const pool = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
-  const view = buildJobView(pool, sp, globalKeywords);
-  await attachDescriptions(view.entries);
+  const globalKeywords = await getGlobalKeywords();
+  // one page of rows + aggregated facet counts, computed in SQL
+  const view = await loadJobView(sp, globalKeywords, { facetLimit: FACET_LIMIT });
   const followedCompanies = new Set((await listFollowedCompanies()).map((n) => n.toLowerCase()));
   const pinnedCountries = (await listPinnedCountries()).map((n) => n.toLowerCase());
 

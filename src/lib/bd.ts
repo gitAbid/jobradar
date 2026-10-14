@@ -7,7 +7,7 @@
  *     (e.g. "Remote — Bangladesh or India", "eligible to work in Bangladesh").
  */
 
-const BD_LOCATION_RE =
+export const BD_LOCATION_RE =
   /\b(bangladesh|dhaka|gulshan|banani|baridhara|mohakhali|mirpur|uttara|bashundhara|dhanmondi|motijheel|kawran ?bazar|tejgaon|chattogram|chittagong|sylhet|khulna|rajshahi|barishal|barisal|rangpur|mymensingh|narayanganj|gazipur|comilla|cumilla|bogura|jashore|jessore)\b/i;
 
 /**

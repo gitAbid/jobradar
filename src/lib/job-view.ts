@@ -1,5 +1,7 @@
 import { matchedKeywords, matchesKeywords } from "@/lib/filters";
 import { computeFacet, countryFacetValue, topValues } from "@/lib/facets";
+import { remoteQuery } from "@/db/remote";
+import { runJobQuery } from "@/lib/job-query";
 import type { FilterableListing } from "@/lib/types";
 
 /**
@@ -10,6 +12,9 @@ import type { FilterableListing } from "@/lib/types";
  */
 
 export const PAGE_SIZE = 20;
+
+/** Per-facet cap for the SQL-backed feed (keeps one page response small). */
+export const FACET_LIMIT = 100;
 
 export interface RawParams {
   status?: string;
@@ -197,4 +202,26 @@ export function buildJobView(
     selections,
     facets,
   };
+}
+
+/**
+ * SQL-backed entry point: fetches only one page of rows plus aggregated
+ * facet counts from Postgres (see job-query.ts). Same `JobView` shape as
+ * `buildJobView`, which stays as the in-memory parity oracle.
+ */
+export async function loadJobView(
+  sp: RawParams,
+  globalKeywords: string[],
+  opts: { pageSize?: number; bd?: boolean; facetLimit?: number } = {},
+): Promise<JobView> {
+  const view = await runJobQuery(
+    (text, values) => remoteQuery(text, values),
+    sp,
+    globalKeywords,
+    { pageSize: opts.pageSize ?? PAGE_SIZE, bd: opts.bd, facetLimit: opts.facetLimit },
+  );
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[jobradar] feed page: ${JSON.stringify(view).length} bytes`);
+  }
+  return view;
 }

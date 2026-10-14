@@ -1,8 +1,6 @@
-import { attachDescriptions, LISTING_POOL_SELECT, listPinnedCountries, q, rowToListing } from "@/db";
-import { bdPrefilterWhere, isBangladeshRelevant } from "@/lib/bd";
+import { listPinnedCountries } from "@/db";
 import { getGlobalKeywords } from "@/lib/settings";
-import type { FilterableListing } from "@/lib/types";
-import { buildJobView, PAGE_SIZE } from "@/lib/job-view";
+import { FACET_LIMIT, loadJobView, PAGE_SIZE } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
 import { ListingCard } from "@/components/ListingCard";
 import { FacetSidebar } from "@/components/FacetSidebar";
@@ -34,24 +32,9 @@ export default async function BangladeshPage({
 }) {
   await connection(); // request-time rendering
   const sp = await searchParams;
-  const [globalKeywords, rows] = await Promise.all([
-    getGlobalKeywords(),
-    // SQL prefilter (superset) + pruned columns + search_text for the exact
-    // JS recheck: transfers only BD-candidate rows instead of the full table
-    q<Record<string, unknown>>(
-      `select ${LISTING_POOL_SELECT}, l.search_text, b.name as board_name, b.filter_keywords as board_filter_keywords
-       from listings l join boards b on b.id = l.board_id
-       where ${bdPrefilterWhere()}
-       order by coalesce(l.posted_at, l.fetched_at) desc`,
-    ),
-  ]);
-
-  const pool = (
-    rows.map((r) => rowToListing(r as never)) as FilterableListing[]
-  ).filter(isBangladeshRelevant);
-
-  const view = buildJobView(pool, sp, globalKeywords);
-  await attachDescriptions(view.entries);
+  const globalKeywords = await getGlobalKeywords();
+  // Bangladesh-relevant rows only (exact regex in SQL), one page + facets
+  const view = await loadJobView(sp, globalKeywords, { bd: true, facetLimit: FACET_LIMIT });
 
   return (
     <div className="flex flex-col gap-5">

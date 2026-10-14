@@ -182,24 +182,31 @@ Done: branch, WIP snapshot commit, agents, `/fix-next`, this board, UI audit doc
 
 **Gates:** tsc, lint, test, build.
 
-## P2.0a SQL-side feed query builder  [ ]   model: sonnet   depends: P2.2
+## P2.0a SQL-side feed query builder  [x]   model: sonnet   depends: P2.2
 **Goal:** each page or API request fetches only one page of rows plus aggregated facet counts. No full-table reads.
 
 **Files:**
-- `db/migrations/002_search.sql` (new): a `search_tsv tsvector` generated column over title, company, location, tags and `search_text`, with a GIN index, plus an index on `coalesce(posted_at, fetched_at) desc`.
-- `src/lib/job-query.ts` (new): the SQL builder.
-- `src/lib/job-view.ts`: keeps its types and its public `JobView` shape, but delegates to SQL.
+- `db/migrations/002_feed_index.sql` (new): index on `coalesce(posted_at, fetched_at) desc` (plus anything the builder's ORDER BY needs). No tsvector: search keeps today's substring semantics (see below).
+- `src/lib/job-query.ts` (new): a pure SQL builder (`buildJobQuery(params, globalKeywords, opts) → {text, values}` pieces) plus an executor that takes a `(text, values) => rows` function, so tests can run it on PGlite and prod runs it via `remoteQuery` from `src/db/remote.ts`.
+- `src/lib/job-view.ts`: keeps its types and its public `JobView` shape; keep the in-memory `buildJobView` exported (the parity test's oracle) and add an async SQL-backed entry point.
 - `src/app/page.tsx`, `src/app/bangladesh/page.tsx`, `src/app/following/page.tsx`, `src/lib/api/jobs.ts`: replace `loadListingsPool` and the full-table `select`s.
-- `tests/job-query.test.ts`.
+- `tests/job-query.test.ts`; `package.json` (devDependency `@electric-sql/pglite`, allowed).
 
 **Reuse:**
 - the filter semantics in `src/lib/filters.ts` and `src/lib/job-view.ts`;
-- the facet definitions in `src/lib/facets.ts`;
+- the facet definitions in `src/lib/facets.ts` (`COUNTRY_FACETS`, `countryFacetValue`) and `src/lib/bd.ts`;
 - `attachDescriptions` in `src/db/index.ts`.
 
+**Design decisions (Opus):**
+- **Execute against Postgres directly** (`remoteQuery`), not through `q()`: `q()` reads the local SQLite mirror, which can't run this SQL. Until P2.0b lands the feed hits Neon per request — fine on this branch, don't deploy in between.
+- **Parity beats cleverness.** `q` = case-insensitive substring over title/company/location/tags/skills (`ILIKE` with `%`/`_`/`\` escaped). Global/board keywords = word-boundary regex: translate `keywordRegex` to a Postgres ARE (`~*`, `\b` → `\y`), passed as a parameter. Country facet = a SQL `CASE` generated from `COUNTRY_FACETS` (each JS regex source translated `\b` → `\y`, `~*`), falling back exactly like `countryFacetValue`. Add a unit test that every `COUNTRY_FACETS` regex translates. Bangladesh prefilter: same translation of the `bd.ts` regex(es).
+- Dedupe identical postings (`lower(company)|lower(title)`) with `distinct on`, keeping the same row the in-memory pipeline keeps (first in pool order); totals count deduped rows.
+- Cascading facets: each facet's counts apply every filter except its own selection; selected values stay listed at count 0. Top-N limits from `topValues`.
+- `tags`/`skills` are JSON text today: use `::jsonb` (P2.4 converts the columns).
+
 **Acceptance:**
-- Results for the same params match the old in-memory pipeline. Write a parity test over the fixture data for: q, status, remote, visa, skill/country/company/source facets, global keywords, and paging.
-- All values are parameterized.
+- Results for the same params match the old in-memory pipeline. The parity test loads migrations 001+002 into PGlite, inserts fixture listings (with tricky cases: `javascript` vs `java`, `%`/`_` in q, duplicates, hidden rows, multiple countries, remote scopes), and compares `entries` ids/order, totals, pages and facets with `buildJobView` for: q, status, remote (1/anywhere/restricted), visa, skill/country/company/source facets (incl. multi-select), global keywords, showAll, and paging (incl. out-of-range page).
+- All values are parameterized (no user input concatenated into SQL).
 - One page response from Neon is under 50 KB; log bytes in dev.
 
 **Gates:** tsc, lint, test, build.
