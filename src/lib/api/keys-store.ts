@@ -1,101 +1,127 @@
-import type { KeyStore, ApiKeyRecord } from "@/lib/api/keys";
-import { q, qOne, run } from "@/db";
+import type { KeyStore, ApiKeyRecord, RateHit } from "@/lib/api/keys";
+import { remoteQuery, remoteRun, remoteRunReturning } from "@/db/remote";
 
 /**
- * Postgres-backed KeyStore. The api_keys DDL is feature-owned and applied
- * lazily (once per process) so this feature stays out of the central
- * ensureSchema in src/db/index.ts. RLS is enabled because the table holds
- * credential hashes: anon/authenticated roles get nothing, while the server's
- * own connection (table owner via DATABASE_URL) is unaffected.
+ * Neon-backed KeyStore. Failures throw: connection/limit errors are
+ * classified by callers (see `classifyRemoteError`), real SQL bugs surface.
  */
 
 interface ApiKeyRow {
   id: number;
   name: string;
+  key_hash?: string;
+  user_id: string | null;
   prefix: string;
-  created_at: string;
-  last_used_at: string | null;
+  created_at: Date | string;
+  last_used_at: Date | string | null;
   request_count: number;
-  revoked_at: string | null;
+  revoked_at: Date | string | null;
+}
+
+/** timestamptz arrives as Date; the KeyStore contract uses ISO strings. */
+function iso(v: Date | string | null): string | null {
+  if (v == null) return null;
+  return v instanceof Date ? v.toISOString() : v;
 }
 
 function rowToRecord(r: ApiKeyRow): ApiKeyRecord {
   return {
     id: Number(r.id),
+    userId: r.user_id ?? null,
     name: r.name,
     prefix: r.prefix,
-    createdAt: r.created_at,
-    lastUsedAt: r.last_used_at,
+    createdAt: iso(r.created_at) ?? "",
+    lastUsedAt: iso(r.last_used_at),
     requestCount: Number(r.request_count),
-    revokedAt: r.revoked_at,
+    revokedAt: iso(r.revoked_at),
   };
 }
 
-let schemaReady: Promise<void> | null = null;
-
-function ensureApiKeysSchema(): Promise<void> {
-  schemaReady ??= (async () => {
-    await q(`
-      create table if not exists api_keys (
-        id            integer generated always as identity primary key,
-        name          text not null,
-        key_hash      text not null unique,
-        prefix        text not null,
-        created_at    text not null,
-        last_used_at  text,
-        request_count integer not null default 0,
-        revoked_at    text
-      )
-    `);
-    await q(`alter table api_keys enable row level security`);
-  })();
-  return schemaReady;
-}
-
-class PostgresKeyStore implements KeyStore {
-  async insert(key: { name: string; keyHash: string; prefix: string; createdAt: string }): Promise<number> {
-    await ensureApiKeysSchema();
-    const row = await qOne<{ id: number }>(
-      "insert into api_keys (name, key_hash, prefix, created_at) values ($1, $2, $3, $4) returning id",
-      [key.name, key.keyHash, key.prefix, key.createdAt],
+class NeonKeyStore implements KeyStore {
+  async insert(key: {
+    name: string;
+    keyHash: string;
+    prefix: string;
+    createdAt: string;
+    userId: string;
+  }): Promise<number> {
+    const rows = await remoteRunReturning<{ id: number }>(
+      "insert into api_keys (name, key_hash, prefix, created_at, user_id) values ($1, $2, $3, $4::timestamptz, $5::uuid) returning id",
+      [key.name, key.keyHash, key.prefix, key.createdAt, key.userId],
     );
-    return Number(row!.id);
+    if (!rows[0]) throw new Error("api_keys insert returned no id");
+    return Number(rows[0].id);
   }
 
-  async list(): Promise<ApiKeyRecord[]> {
-    await ensureApiKeysSchema();
-    const rows = await q<ApiKeyRow>("select * from api_keys order by id desc");
+  async list(userId: string): Promise<ApiKeyRecord[]> {
+    const rows = await remoteQuery<ApiKeyRow>(
+      "select * from api_keys where user_id = $1::uuid order by id desc",
+      [userId],
+    );
     return rows.map(rowToRecord);
   }
 
-  async revoke(id: number, revokedAt: string): Promise<boolean> {
-    await ensureApiKeysSchema();
-    const count = await run(
-      "update api_keys set revoked_at = $1 where id = $2 and revoked_at is null",
-      [revokedAt, id],
+  async revoke(id: number, userId: string, revokedAt: string): Promise<boolean> {
+    const count = await remoteRun(
+      "update api_keys set revoked_at = $1::timestamptz where id = $2 and user_id = $3::uuid and revoked_at is null",
+      [revokedAt, id, userId],
     );
     return count > 0;
   }
 
   async findByHash(keyHash: string): Promise<ApiKeyRecord | null> {
-    await ensureApiKeysSchema();
-    const row = await qOne<ApiKeyRow>("select * from api_keys where key_hash = $1", [keyHash]);
-    return row ? rowToRecord(row) : null;
+    // Keys of disabled users stop working immediately (sessions lapse within minutes).
+    const rows = await remoteQuery<ApiKeyRow>(
+      `select k.* from api_keys k
+         left join users u on u.id = k.user_id
+        where k.key_hash = $1 and u.disabled_at is null`,
+      [keyHash],
+    );
+    return rows[0] ? rowToRecord(rows[0]) : null;
   }
 
   async recordUsage(id: number, usedAt: string): Promise<void> {
-    try {
-      await run(
-        "update api_keys set last_used_at = $1, request_count = request_count + 1 where id = $2",
-        [usedAt, id],
-      );
-    } catch {
-      // stats must never break a request
+    await remoteRun(
+      "update api_keys set last_used_at = $1::timestamptz, request_count = request_count + 1 where id = $2",
+      [usedAt, id],
+    );
+  }
+
+  async hitRate(keyId: number): Promise<RateHit> {
+    const rows = await remoteRunReturning<{ count: number; retry: number }>(
+      `insert into api_rate (key_id, window_start, count)
+         values ($1::int, date_trunc('hour', now()), 1)
+       on conflict (key_id, window_start) do update set count = api_rate.count + 1
+       returning count,
+         ceil(extract(epoch from (window_start + interval '1 hour' - now())))::int as retry`,
+      [keyId],
+    );
+    if (!rows[0]) throw new Error("api_rate upsert returned no row");
+    // Opportunistic cleanup of old windows; best-effort, never blocks the request.
+    if (Math.random() < 0.01) {
+      remoteRun("delete from api_rate where window_start < now() - interval '1 day'").catch(() => {});
     }
+    return { count: Number(rows[0].count), retryAfterSeconds: Math.max(1, Number(rows[0].retry)) };
+  }
+
+  async hitAuthFailure(client: string): Promise<RateHit> {
+    const rows = await remoteRunReturning<{ count: number; retry: number }>(
+      `insert into api_auth_fail (client, window_start, count)
+         values ($1, date_trunc('hour', now()), 1)
+       on conflict (client, window_start) do update set count = api_auth_fail.count + 1
+       returning count,
+         ceil(extract(epoch from (window_start + interval '1 hour' - now())))::int as retry`,
+      [client],
+    );
+    if (!rows[0]) throw new Error("api_auth_fail upsert returned no row");
+    if (Math.random() < 0.01) {
+      remoteRun("delete from api_auth_fail where window_start < now() - interval '1 day'").catch(() => {});
+    }
+    return { count: Number(rows[0].count), retryAfterSeconds: Math.max(1, Number(rows[0].retry)) };
   }
 }
 
-const singleton = new PostgresKeyStore();
+const singleton = new NeonKeyStore();
 
 /** The process-wide store used by routes and server actions. */
 export function apiKeys(): KeyStore {

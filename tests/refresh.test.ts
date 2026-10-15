@@ -4,13 +4,18 @@ import { refreshAll, startRefreshRun } from "@/lib/refresh";
 import { fetchBoardListings } from "@/lib/adapters";
 import type { NormalizedListing } from "@/lib/types";
 
+const inserted: { url: string }[] = [];
+
 vi.mock("@/db", () => ({
   // q covers the enabled-boards SELECT; qOne the mirrored-run blob read
   // (undefined = no stored run); insertListings the listing upserts; run
   // the board-health UPDATEs, expiry DELETE, and run mirroring
   q: async () => boardRows,
   qOne: async () => undefined,
-  insertListings: async (_boardId: number, rows: unknown[]) => rows.length,
+  insertListings: async (_boardId: number, rows: unknown[]) => {
+    inserted.push(...(rows as { url: string }[]));
+    return rows.length;
+  },
   run: async () => 0,
   rowToBoard: (r: Record<string, unknown>) => ({
     id: r.id as number,
@@ -51,6 +56,7 @@ function listing(n: number): NormalizedListing {
 
 beforeEach(() => {
   vi.mocked(fetchBoardListings).mockReset();
+  inserted.length = 0;
   (globalThis as { __jobradarRefreshRun?: unknown }).__jobradarRefreshRun = undefined;
 });
 
@@ -68,6 +74,24 @@ describe("refreshAll", () => {
       { boardId: 1, boardName: "Board A", ok: true, fetched: 2, inserted: 2 },
       { boardId: 2, boardName: "Board B", ok: true, fetched: 1, inserted: 1 },
     ]);
+  });
+
+  it("drops listings whose url is not absolute http(s)", async () => {
+    vi.mocked(fetchBoardListings).mockImplementation(async (board) =>
+      board.id === 1
+        ? [
+            listing(1),
+            { ...listing(2), url: "javascript:alert(1)" },
+            { ...listing(3), url: "data:text/html,<script>1</script>" },
+            { ...listing(4), url: "/jobs/4" },
+            { ...listing(5), url: "http://a.example/5" },
+          ]
+        : [],
+    );
+
+    await refreshAll(undefined, "manual");
+
+    expect(inserted.map((r) => r.url)).toEqual(["https://a.example/1", "http://a.example/5"]);
   });
 
   it("returns null when another refresh is still in flight", async () => {

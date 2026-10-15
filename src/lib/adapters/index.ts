@@ -23,15 +23,15 @@ import {
   parseJapanDevDetail,
   capDescription,
 } from "@/lib/adapters/normalize";
-import { decodeEntities, isTechTitle, parseArcJobs, parseArcDetail, parseEasyJobsApi, parseNextJobzDetail, parseNextJobzRsc, parseNextJobzSitemap, parseRelocateMe, parseRelocateMeDetail, parseRiseupLabs, parseRiseupLabsDetail, parseSkillJobs, parseSkillJobsDetail, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
+import { decodeEntities, isTechTitle, parseArcJobs, parseArcDetail, parseEasyJobsApi, parseNextJobzDetail, parseNextJobzSitemap, parseRelocateMe, parseRelocateMeDetail, parseRiseupLabs, parseRiseupLabsDetail, parseSkillJobs, parseSkillJobsDetail, parseTokyoDev, parseTokyoDevDetail, filterTechUrls } from "@/lib/adapters/scrape";
 import { knownEnrichedExternalIds, persistEnrichment, q } from "@/db";
 import type { EnrichPatch } from "@/db";
+import { BOT_UA, safeFetch } from "@/lib/safe-fetch";
+import { isAllowedByRobots, RobotsDisallowedError } from "@/lib/robots";
 import { buildSearchText } from "@/lib/filters";
 import { extractSkills } from "@/lib/skills";
 
 const TIMEOUT_MS = 15_000;
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) JobRadar/1.0 (+https://localhost)";
 
 /**
  * Wall-clock budget for browser-based detail enrichment. Serverless
@@ -66,11 +66,12 @@ async function fetchJson(url: string): Promise<unknown> {
 }
 
 async function fetchText(url: string, headers: Record<string, string> = {}): Promise<string> {
+  if (!(await isAllowedByRobots(url))) throw new RobotsDisallowedError(url);
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(url, {
-        headers: { "User-Agent": UA, Accept: "application/json, text/xml, */*", ...headers },
+      const res = await safeFetch(url, {
+        headers: { "User-Agent": BOT_UA, Accept: "application/json, text/xml, */*", ...headers },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -625,7 +626,7 @@ async function fetchJapanDev(board: Pick<Board, "id" | "name" | "url">): Promise
       board.id,
       all
         .filter((l) => l.description.length >= 80)
-        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0 })),
+        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship })),
     );
     console.log(`[jobradar] japandev: enriched ${enriched} listings via detail API`);
   }
@@ -758,7 +759,7 @@ async function fetchReed(board: Pick<Board, "id" | "name" | "url">): Promise<Nor
       board.id,
       all
         .filter((l) => l.description)
-        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0 })),
+        .map((l) => toPatch(l, { visaSponsorship: l.visaSponsorship })),
     );
     console.log(`[jobradar] reed: enriched ${enriched} descriptions via detail API`);
   }
@@ -801,7 +802,7 @@ async function fetchArc(board: Pick<Board, "id" | "name" | "url">): Promise<Norm
         .filter((l) => l.description)
         .map((l) =>
           toPatch(l, {
-            visaSponsorship: l.visaSponsorship ? 1 : 0,
+            visaSponsorship: l.visaSponsorship,
             company: l.company,
           }),
         ),
@@ -855,7 +856,7 @@ async function fetchRelocateMe(board: Pick<Board, "id" | "name" | "url">): Promi
       listings
         .filter((l) => l.description)
         .map((l) =>
-          toPatch(l, { visaSponsorship: l.visaSponsorship ? 1 : 0, postedAt: l.postedAt }),
+          toPatch(l, { visaSponsorship: l.visaSponsorship, postedAt: l.postedAt }),
         ),
     );
     console.log(`[jobradar] relocate.me: enriched ${enriched} descriptions via detail pages`);

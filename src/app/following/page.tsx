@@ -1,13 +1,14 @@
 import { connection } from "next/server";
+import { requirePageUser } from "@/lib/authz";
 import Link from "next/link";
-import { listFollowedCompanies, q, rowToListing } from "@/db";
-import { toggleFollowCompanyAction } from "@/app/actions";
+import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
+import { UnfollowButton } from "@/components/UnfollowButton";
 import { ListingCard } from "@/components/ListingCard";
-import { ArrowUpRight, Building2, Heart, Star, X } from "lucide-react";
+import { EmptyState } from "@/components/ui";
+import { ArrowUpRight, Building2, Star } from "lucide-react";
 import type { FilterableListing } from "@/lib/types";
 
-// May kick a self-heal refresh on a cold instance while the remote is down.
-export const maxDuration = 60;
+export const metadata = { title: "Following" };
 
 const FOLLOWING_LIMIT = 200;
 
@@ -21,9 +22,10 @@ export default async function FollowingPage({
   searchParams: Promise<SearchParams>;
 }) {
   await connection(); // request-time rendering
+  const user = await requirePageUser();
   const sp = await searchParams;
 
-  const followed = await listFollowedCompanies();
+  const followed = await listFollowedCompanies(user.id);
   const selected = sp.company?.trim();
   // only accept a filter that matches a followed company (case-insensitive)
   const activeCompany =
@@ -35,20 +37,22 @@ export default async function FollowingPage({
   // Capped: a prolific company shouldn't produce an unbounded page.
   const rows = followed.length
     ? await q<Record<string, unknown>>(
-        `select l.*, b.name as board_name
+        `select ${LISTING_POOL_SELECT}, ${USER_STATE_SELECT}, b.name as board_name
          from listings l join boards b on b.id = l.board_id
+         ${userStateJoin("$1")}
          where exists (
            select 1 from followed_companies fc
-           where lower(fc.name) = lower(l.company)
+           where fc.user_id = $1::uuid and lower(fc.name) = lower(l.company)
          )
-         ${activeCompany ? "and lower(l.company) = lower($1)" : ""}
+         ${activeCompany ? "and lower(l.company) = lower($2)" : ""}
          order by coalesce(l.posted_at, l.fetched_at) desc
          limit ${FOLLOWING_LIMIT}`,
-        activeCompany ? [activeCompany] : [],
+        activeCompany ? [user.id, activeCompany] : [user.id],
       )
     : [];
 
   const listings = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
+  await attachDescriptions(listings.map((listing) => ({ listing })));
   const followedSet = new Set(followed.map((n) => n.toLowerCase()));
 
   // Accurate per-company opening counts (unaffected by the feed cap above).
@@ -57,7 +61,9 @@ export default async function FollowingPage({
       await q<{ company: string; n: number }>(
         `select min(l.company) as company, count(*) as n
          from listings l join followed_companies f on lower(f.name) = lower(l.company)
+         where f.user_id = $1::uuid
          group by lower(l.company)`,
+        [user.id],
       )
     ).map((r) => [r.company.toLowerCase(), r.n]),
   );
@@ -65,42 +71,42 @@ export default async function FollowingPage({
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="rounded-3xl bg-amber-50 px-5 py-6 sm:px-7 sm:py-8">
+      <section className="rounded-3xl bg-amber-soft px-5 py-6 sm:px-7 sm:py-8">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-800">
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-line bg-surface-raised/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-ink">
               <Star className="h-3.5 w-3.5 fill-current" /> Your shortlist
             </div>
-            <h1 className="mt-4 text-3xl font-bold tracking-[-0.04em] text-slate-950 sm:text-4xl">Following</h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-[15px]">
+            <h1 className="mt-4 text-3xl font-bold tracking-[-0.04em] text-foreground sm:text-4xl">Following</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted sm:text-[15px]">
               Keep an eye on the companies you would be excited to join. New openings collect here automatically.
             </p>
           </div>
           <Link
             href="/"
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-ink px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-ink/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
           >
             Find companies <ArrowUpRight className="h-4 w-4" />
           </Link>
         </div>
         <div className="mt-6 flex flex-wrap gap-2.5">
-          <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Companies</p>
-            <p className="mt-1 text-2xl font-bold text-slate-950">{followed.length}</p>
+          <div className="rounded-2xl bg-surface-raised px-4 py-3 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-faint">Companies</p>
+            <p className="mt-1 text-2xl font-bold text-foreground">{followed.length}</p>
           </div>
-          <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Openings</p>
-            <p className="mt-1 text-2xl font-bold text-slate-950">{totalCount}</p>
+          <div className="rounded-2xl bg-surface-raised px-4 py-3 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-faint">Openings</p>
+            <p className="mt-1 text-2xl font-bold text-foreground">{totalCount}</p>
           </div>
         </div>
       </section>
 
       {followed.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <section className="rounded-2xl border border-border bg-surface-raised p-4 shadow-sm sm:p-5">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-bold text-slate-900">Companies you follow</p>
-              <p className="mt-0.5 text-xs text-slate-400">Select one to focus your feed.</p>
+              <p className="text-sm font-bold text-foreground">Companies you follow</p>
+              <p className="mt-0.5 text-xs text-faint">Select one to focus your feed.</p>
             </div>
             <Building2 className="h-5 w-5 text-amber-500" />
           </div>
@@ -109,8 +115,8 @@ export default async function FollowingPage({
               href="/following"
               className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
                 !activeCompany
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:text-amber-800"
+                  ? "border-ink bg-ink text-white"
+                  : "border-border bg-surface-raised text-muted hover:border-amber-line hover:text-amber-ink"
               }`}
             >
               All <span className="opacity-70">{totalCount}</span>
@@ -123,8 +129,8 @@ export default async function FollowingPage({
                   key={name}
                   className={`inline-flex min-h-10 items-center overflow-hidden rounded-xl border text-xs font-semibold transition-colors ${
                     isActive
-                      ? "border-amber-400 bg-amber-100 text-amber-900 shadow-sm"
-                      : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                      ? "border-amber-line bg-amber-soft2 text-amber-ink shadow-sm"
+                      : "border-amber-line bg-amber-soft text-amber-ink hover:bg-amber-soft2"
                   }`}
                 >
                   <Link
@@ -132,23 +138,16 @@ export default async function FollowingPage({
                     title={`Show only ${name} openings`}
                     className="inline-flex min-h-10 items-center gap-1.5 py-1 pl-3 pr-1"
                   >
-                    <Star className={`h-3.5 w-3.5 fill-current ${isActive ? "text-amber-600" : "text-amber-500"}`} />
+                    <Star className={`h-3.5 w-3.5 fill-current ${isActive ? "text-amber-ink" : "text-amber-500"}`} />
                     {name}
-                    <span className={isActive ? "text-amber-700" : "text-amber-600"}>
+                    <span className={isActive ? "text-amber-ink" : "text-amber-ink"}>
                       {counts.get(name.toLowerCase()) ?? 0}
                     </span>
                   </Link>
-                  <form action={toggleFollowCompanyAction}>
-                    <input type="hidden" name="company" value={name} />
-                    <button
-                      type="submit"
-                      title={`Unfollow ${name}`}
-                      aria-label={`Unfollow ${name}`}
-                      className={`inline-flex min-h-10 items-center p-2 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500 ${isActive ? "text-amber-700" : "text-amber-400"}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </form>
+                  <UnfollowButton
+                    name={name}
+                    className={`inline-flex min-h-10 items-center p-2 transition-colors hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500 ${isActive ? "text-amber-ink" : "text-amber-400"}`}
+                  />
                 </span>
               );
             })}
@@ -157,35 +156,31 @@ export default async function FollowingPage({
       )}
 
       {followed.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center shadow-sm sm:px-10">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
-            <Heart className="h-6 w-6" />
-          </div>
-          <h2 className="mt-4 text-base font-bold text-slate-900">Build your company shortlist</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            Tap the star next to any company on a job card and its current openings will appear here.
-          </p>
-          <Link href="/" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800">
-            Explore the dashboard <ArrowUpRight className="h-4 w-4" />
-          </Link>
-        </div>
+        <EmptyState
+          title="Build your company shortlist"
+          description="Tap the star next to any company on a job card and its current openings will appear here."
+          action={
+            <Link href="/" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
+              Browse jobs <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          }
+        />
       ) : listings.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-14 text-center shadow-sm sm:px-10">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-            <Building2 className="h-6 w-6" />
-          </div>
-          <h2 className="mt-4 text-base font-bold text-slate-900">No current openings</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            No current openings from <strong>{activeCompany}</strong>.
-          </p>
-          <p className="mt-3 text-sm text-slate-500">
-            <Link href="/following" className="font-semibold text-teal-700 underline">View all followed companies</Link> or check the <Link href="/" className="font-semibold text-teal-700 underline">Dashboard</Link> after a refresh.
-          </p>
-        </div>
+        <EmptyState
+          variant="filtered"
+          title="No current openings"
+          description={<>No current openings from <strong>{activeCompany}</strong>.</>}
+          clearFilters={
+            <Link href="/following" className="inline-flex min-h-11 items-center rounded-lg border border-border-strong bg-surface-raised px-4 text-sm font-semibold text-foreground hover:bg-surface">
+              View all followed companies
+            </Link>
+          }
+        />
       ) : (
         <div className="flex flex-col gap-3">
+          <h2 className="sr-only">Openings from followed companies</h2>
           {activeCompany && (
-            <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs font-medium text-amber-900">
+            <p className="rounded-xl bg-amber-soft px-3.5 py-2.5 text-xs font-medium text-amber-ink">
               Showing openings from <strong>{activeCompany}</strong> only. <Link href="/following" className="font-bold underline">Show all</Link>
             </p>
           )}
@@ -193,7 +188,7 @@ export default async function FollowingPage({
             <ListingCard key={l.id} listing={l} matched={[]} followedCompanies={followedSet} />
           ))}
           {!activeCompany && listings.length >= FOLLOWING_LIMIT && (
-            <p className="text-center text-xs font-medium text-slate-400">Showing the latest {FOLLOWING_LIMIT} openings.</p>
+            <p className="text-center text-xs font-medium text-faint">Showing the latest {FOLLOWING_LIMIT} openings.</p>
           )}
         </div>
       )}

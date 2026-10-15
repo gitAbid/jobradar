@@ -1,0 +1,32 @@
+name: refresh-cron
+
+# Vercel Hobby only allows daily crons (vercel.json runs 06:00 UTC as a fallback).
+# This workflow drives the hourly fan-out refresh against production.
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call /api/refresh/cron
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://jobradar-orpin.vercel.app' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::notice::CRON_SECRET repo secret is not set; skipping refresh."
+            exit 0
+          fi
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 \
+            -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/refresh/cron")
+          echo "HTTP $status"
+          case "$status" in
+            202|409) exit 0 ;;  # started, or a run is already in progress
+            *) echo "::error::refresh cron returned HTTP $status"; exit 1 ;;
+          esac

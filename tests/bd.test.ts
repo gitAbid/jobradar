@@ -32,3 +32,12 @@ describe("isBangladeshRelevant", () => {
     ).toBe(false);
   });
 });
+
+describe("bd location preset", () => {
+  it("maps /bangladesh to the country facet, keeping other params", async () => {
+    const { bdPresetUrl } = await import("@/lib/bd");
+    expect(bdPresetUrl({})).toBe("/?country=Bangladesh");
+    expect(bdPresetUrl({ q: "java", skill: ["a", "b"] })).toBe("/?q=java&skill=a&skill=b&country=Bangladesh");
+    expect(bdPresetUrl({ country: "bangladesh" })).toBe("/?country=bangladesh");
+  });
+});

@@ -1,23 +1,21 @@
 import { NextResponse } from "next/server";
 import { after } from "next/server";
-import { startRefreshRun } from "@/lib/refresh";
+import { startScheduledRefresh } from "@/lib/refresh";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
  * Scheduled-refresh entrypoint for Vercel Cron (see vercel.json). Vercel
  * sends "Authorization: Bearer $CRON_SECRET" on cron invocations when the
- * CRON_SECRET env var is set; reject anything else.
+ * CRON_SECRET env var is set; reject anything else (and everything if unset).
  */
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const started = await startRefreshRun(undefined, "scheduled");
+  const started = await startScheduledRefresh();
   if (started === null) {
     return NextResponse.json({ error: "already_running" }, { status: 409 });
   }

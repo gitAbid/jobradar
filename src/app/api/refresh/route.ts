@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { after } from "next/server";
 import { startRefreshRun } from "@/lib/refresh";
 import { getRun } from "@/lib/refresh-run";
+import { withAdmin } from "@/lib/authz";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /** Reject cross-site browser form/fetch posts (public URL, personal app). */
@@ -18,16 +17,8 @@ function sameOrigin(request: Request): boolean {
   }
 }
 
-/**
- * Starts a refresh and returns immediately (202); the run keeps going on the
- * server no matter what the client does next — `after()` holds the serverless
- * invocation open until it finishes. Progress: GET ./status.
- */
-export async function POST(request: Request) {
-  if (!sameOrigin(request)) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
+/** Manual refresh is admin-only (cron has its own route). */
+const startRefresh = withAdmin(async (_admin, request: Request) => {
   let boardId: number | undefined;
   try {
     const body = (await request.json()) as { boardId?: number } | null;
@@ -47,4 +38,16 @@ export async function POST(request: Request) {
     { runId: started.run.id, boardCount: started.run.boards.length, startedAt: started.run.startedAt },
     { status: 202 },
   );
+});
+
+/**
+ * Starts a refresh and returns immediately (202); the run keeps going on the
+ * server no matter what the client does next — `after()` holds the serverless
+ * invocation open until it finishes. Progress: GET ./status.
+ */
+export async function POST(request: Request) {
+  if (!sameOrigin(request)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  return startRefresh(request);
 }

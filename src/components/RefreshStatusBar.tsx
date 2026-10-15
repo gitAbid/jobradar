@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw, X } from "lucide-react";
 import { beep } from "@/lib/beep";
@@ -46,9 +46,17 @@ export function RefreshStatusBar({ soundEnabled }: { soundEnabled: boolean }) {
     router.refresh();
   }, [state.completedRunId, soundEnabled, inserted, router]);
 
-  const summaryFresh =
-    run?.finishedAt != null && Date.now() - new Date(run.finishedAt).getTime() < SUMMARY_FRESH_MS;
-  const showSummary = !active && run?.finishedAt != null && summaryFresh && run.finishedAt !== state.dismissedFinishedAt;
+  // Freshness is decided in a timer callback (not during render) so render stays pure.
+  const finishedAt = run?.finishedAt ?? null;
+  const [freshFinishedAt, setFreshFinishedAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (finishedAt == null) return;
+    if (Date.now() - new Date(finishedAt).getTime() >= SUMMARY_FRESH_MS) return;
+    const timer = setTimeout(() => setFreshFinishedAt(finishedAt), 0);
+    return () => clearTimeout(timer);
+  }, [finishedAt]);
+  const summaryFresh = finishedAt != null && freshFinishedAt === finishedAt;
+  const showSummary = !active && summaryFresh && finishedAt !== state.dismissedFinishedAt;
 
   useEffect(() => {
     if (!showSummary) return;
@@ -64,20 +72,20 @@ export function RefreshStatusBar({ soundEnabled }: { soundEnabled: boolean }) {
     <div
       role="status"
       aria-live="polite"
-      className="border-t border-teal-100 bg-teal-50/95 text-teal-950"
+      className="border-t border-teal-line bg-teal-soft/95 text-teal-ink"
     >
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-1.5 sm:px-6">
         {active ? (
           <>
-            <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-teal-600" />
-            <span className="shrink-0 text-sm font-semibold text-teal-900">
+            <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-primary" />
+            <span className="shrink-0 text-sm font-semibold text-teal-ink">
               {label}&hellip;
             </span>
-            <span className="hidden shrink-0 text-xs font-medium text-teal-700 sm:inline">
+            <span className="hidden shrink-0 text-xs font-medium text-teal-ink sm:inline">
               {done}/{total} boards{inserted > 0 && ` · +${inserted} new`}
             </span>
             <div
-              className="h-1 min-w-16 flex-1 overflow-hidden rounded-full bg-teal-100"
+              className="h-1 min-w-16 flex-1 overflow-hidden rounded-full bg-teal-soft2"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={total}
@@ -90,24 +98,24 @@ export function RefreshStatusBar({ soundEnabled }: { soundEnabled: boolean }) {
               />
             </div>
             {failed > 0 && (
-              <span className="shrink-0 text-xs font-semibold text-rose-600">
+              <span className="shrink-0 text-xs font-semibold text-danger">
                 {failed} failed
               </span>
             )}
           </>
         ) : (
           <>
-            <span className="flex-1 text-sm font-medium text-teal-900">
+            <span className="flex-1 text-sm font-medium text-teal-ink">
               {run!.trigger === "scheduled" ? "Auto-refresh" : "Refresh"} complete
               {inserted > 0 && <span className="font-semibold"> · +{inserted} new</span>}
-              {failed > 0 && <span className="font-semibold text-rose-600"> · {failed} failed</span>}
+              {failed > 0 && <span className="font-semibold text-danger"> · {failed} failed</span>}
               {inserted === 0 && failed === 0 && " · up to date"}
             </span>
             <button
               type="button"
               onClick={dismissFinished}
               aria-label="Dismiss"
-              className="inline-flex min-h-8 shrink-0 items-center p-1 text-teal-500 transition-colors hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+              className="inline-flex min-h-8 shrink-0 items-center p-1 text-primary transition-colors hover:text-teal-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
             >
               <X className="h-4 w-4" />
             </button>

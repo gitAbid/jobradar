@@ -1,86 +1,104 @@
 import type { Metadata } from "next";
-import { MapPin, X } from "lucide-react";
-import Link from "next/link";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { listPinnedCountries } from "@/db";
-import { isSoundEnabled } from "@/lib/settings";
-import { togglePinCountryAction } from "@/app/actions";
+import { getTheme, isSoundEnabled } from "@/lib/settings";
+import { getSessionUser } from "@/lib/authz";
+import { PinnedCountryChip } from "@/components/PinnedCountryChip";
+import { ToastProvider } from "@/components/ui";
 import { AppHeader } from "@/components/AppHeader";
+import { ThemeSync } from "@/components/ThemeSync";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { UserMenu } from "@/components/UserMenu";
 import { RefreshStatusBar } from "@/components/RefreshStatusBar";
+import Link from "next/link";
+import { Radar } from "lucide-react";
 import "./globals.css";
 
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+
+const SITE_URL =
+  process.env.AUTH_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  title: "JobRadar — your personal job search radar",
+  metadataBase: new URL(SITE_URL),
+  title: { default: "JobRadar — your personal job search radar", template: "%s · JobRadar" },
+  applicationName: "JobRadar",
   description: "Gather, filter, save, and track the job openings that fit your next move.",
 };
 
-/** Pinned countries shown in the nav; streams in without blocking layout render. */
-async function PinnedCountriesNav() {
+/** Header with role-aware nav, user menu and pinned locations; streams in under a static fallback. */
+async function Header() {
   await connection(); // request-time read
-  const pinned = await listPinnedCountries();
-  if (pinned.length === 0) return null;
-
+  const user = await getSessionUser();
+  const pinned = user ? await listPinnedCountries(user.id) : [];
   return (
-    <div className="border-t border-slate-200/80 bg-white/70">
-      <div className="mx-auto flex min-h-10 max-w-7xl items-center gap-3 overflow-x-auto px-4 py-1.5 sm:px-6">
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-          Pinned locations
-        </span>
-        {pinned.map((country) => (
-          <span
-            key={country}
-            className="group inline-flex shrink-0 items-center overflow-hidden rounded-full border border-teal-200 bg-teal-50 text-xs font-medium text-teal-800"
-          >
-            <Link
-              href={`/?country=${encodeURIComponent(country)}`}
-              title={`Show ${country} jobs`}
-              className="inline-flex min-h-8 items-center gap-1 py-1 pl-2.5 pr-1 hover:text-teal-950"
-            >
-              <MapPin className="h-3.5 w-3.5 text-teal-600" />
-              {country}
-            </Link>
-            <form action={togglePinCountryAction}>
-              <input type="hidden" name="country" value={country} />
-              <button
-                type="submit"
-                title={`Unpin ${country}`}
-                aria-label={`Unpin ${country}`}
-                className="inline-flex min-h-8 items-center p-1.5 text-teal-400 transition-colors hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </form>
-          </span>
+    <>
+      <AppHeader
+        isAdmin={user?.role === "admin"}
+        signedOut={!user}
+        userMenu={<UserMenu />}
+        hasPinned={pinned.length > 0}
+        pinned={pinned.map((country) => (
+          <PinnedCountryChip key={country} country={country} />
         ))}
-      </div>
-    </div>
+      />
+      {user && <ThemeSync theme={await getTheme(user.id)} />}
+    </>
   );
 }
 
 /** Refresh progress bar; streams in without blocking layout render. */
 async function RefreshStatus() {
   await connection(); // request-time read (sound setting)
-  return <RefreshStatusBar soundEnabled={await isSoundEnabled()} />;
+  const user = await getSessionUser();
+  return <RefreshStatusBar soundEnabled={user ? await isSoundEnabled(user.id) : true} />;
 }
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-sand text-slate-950 antialiased">
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        {/* applies the saved theme before first paint (no flash) */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="flex min-h-dvh flex-col overflow-x-clip bg-sand text-foreground antialiased">
+        <ToastProvider>
         <a className="skip-link" href="#main-content">Skip to content</a>
-        <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/90 backdrop-blur-xl">
-          <AppHeader />
-          <Suspense fallback={null}>
-            <PinnedCountriesNav />
+        <header className="sticky top-0 z-40 border-b border-border bg-surface-raised/90 backdrop-blur-xl">
+          <Suspense fallback={<AppHeader />}>
+            <Header />
           </Suspense>
           <Suspense fallback={null}>
             <RefreshStatus />
           </Suspense>
         </header>
-        <main id="main-content" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+        <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+          {/* pages read the DB at request time (connection()); stream them under the static shell */}
+          <Suspense fallback={null}>{children}</Suspense>
+        </main>
+        <footer className="border-t border-border bg-surface-raised/60">
+          <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 px-4 py-8 text-sm text-muted sm:flex-row sm:justify-between sm:px-6">
+            <div className="flex flex-col items-center gap-1 sm:items-start">
+              <span className="inline-flex items-center gap-2 font-semibold text-foreground">
+                <Radar className="h-4 w-4 text-primary" aria-hidden="true" />
+                Job<span className="-ml-2 text-primary">Radar</span>
+              </span>
+              <span className="text-xs text-faint">Your personal job search radar</span>
+            </div>
+            <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+              <Link href="/privacy" className="transition-colors hover:text-foreground">Privacy</Link>
+              <Link href="/terms" className="transition-colors hover:text-foreground">Terms</Link>
+              <Link href="/bot" className="transition-colors hover:text-foreground">Our crawler</Link>
+            </nav>
+          </div>
+        </footer>
+        </ToastProvider>
       </body>
     </html>
   );

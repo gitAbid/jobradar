@@ -1,19 +1,19 @@
-import type { Browser } from "playwright";
+import type { Browser } from "playwright-core";
+import { assertSafeUrl, BOT_UA } from "@/lib/safe-fetch";
+import { isAllowedByRobots, RobotsDisallowedError } from "@/lib/robots";
 
 /**
  * Lazy singleton headless Chromium for scraping JS-rendered career pages.
  * The browser is either a local launch, or — when BROWSERLESS_WS_URL is set
  * (e.g. a Browserless Cloud-Chrome endpoint) — a remote session connected
  * over CDP, which is what lets detail enrichment run on serverless where
- * local Chromium cannot. playwright itself is imported lazily too —
+ * local Chromium cannot. playwright-core itself is imported lazily too —
  * importing this module must never fail in environments where the package
  * is unavailable (serverless), so adapters can degrade gracefully.
  */
 
 declare const globalThis: { __jobradarBrowser?: Browser };
 
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36";
 
 /**
  * Local headless Chromium cannot run on serverless (no browser binaries,
@@ -36,7 +36,7 @@ function assertBrowserAvailable(): void {
 }
 
 async function launchBrowser(): Promise<Browser> {
-  const { chromium } = await import("playwright");
+  const { chromium } = await import("playwright-core");
   const remote = process.env.BROWSERLESS_WS_URL;
   if (remote) return chromium.connectOverCDP(remote);
   return chromium.launch({ headless: true });
@@ -54,9 +54,13 @@ export async function getBrowser(): Promise<Browser> {
 export async function renderPage(url: string, waitMs = 4000): Promise<string> {
   assertBrowserAvailable();
   const browser = await getBrowser();
-  const ctx = await browser.newContext({ userAgent: UA });
+  const ctx = await browser.newContext({ userAgent: BOT_UA });
   try {
     const page = await ctx.newPage();
+    // Checked outside the goto .catch so a blocked URL throws. Cannot pin DNS or
+    // vet in-browser redirects/subresources.
+    await assertSafeUrl(url);
+    if (!(await isAllowedByRobots(url))) throw new RobotsDisallowedError(url);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     return await page.content();
@@ -69,9 +73,13 @@ export async function renderPage(url: string, waitMs = 4000): Promise<string> {
 export async function renderText(url: string, waitMs = 3500): Promise<string> {
   assertBrowserAvailable();
   const browser = await getBrowser();
-  const ctx = await browser.newContext({ userAgent: UA });
+  const ctx = await browser.newContext({ userAgent: BOT_UA });
   try {
     const page = await ctx.newPage();
+    // Checked outside the goto .catch so a blocked URL throws. Cannot pin DNS or
+    // vet in-browser redirects/subresources.
+    await assertSafeUrl(url);
+    if (!(await isAllowedByRobots(url))) throw new RobotsDisallowedError(url);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     return await page.evaluate(() => document.body.innerText ?? "");
