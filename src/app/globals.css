@@ -115,7 +115,7 @@
   --danger-soft: #fff1ee;
   --subtle: #f1f5f9;
   --subtle-2: #e2e8f0;
-  --faint: #94a3b8;
+  --faint: #5f6b78; /* 5.07:1 on --surface, 4.96:1 on --subtle (AA for small text) */
   --ink: #0f172a;
   --ink-muted: #cbd5e1;
   --ink-faint: #94a3b8;
@@ -351,14 +351,22 @@ select:focus-visible {
 @theme {
   --animate-fade-up: fade-up 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 
+  /* slide only: content stays visible from the first frame (no LCP / Speed Index delay) */
   @keyframes fade-up {
     from {
-      opacity: 0;
       transform: translateY(12px);
     }
     to {
-      opacity: 1;
       transform: none;
     }
   }
+}
+
+/*
+ * Header fallback (static shell, before the session streams in): on pages that
+ * are almost always viewed signed-out, hide its signed-in-only nav so the
+ * signed-out header replaces it without shifting the page (see AppHeader).
+ */
+body:has([data-signed-out-page]) [data-signed-in-only] {
+  display: none;
 }

@@ -47,7 +47,11 @@ const DEFAULT_KEYWORDS: string[] = [];
 
 /** The user's skill keywords, e.g. ["java","spring boot","senior","lead"] */
 export async function getGlobalKeywords(userId: string): Promise<string[]> {
-  const raw = await getUserSetting(userId, "global_keywords");
+  return parseGlobalKeywords(await getUserSetting(userId, "global_keywords"));
+}
+
+/** Stored `global_keywords` value → keyword list (defaults when unset or malformed). */
+export function parseGlobalKeywords(raw: string | null | undefined): string[] {
   if (!raw) return DEFAULT_KEYWORDS;
   try {
     const v = JSON.parse(raw);
@@ -62,12 +66,19 @@ export async function setGlobalKeywords(userId: string, keywords: string[]): Pro
 }
 
 export async function isSoundEnabled(userId: string): Promise<boolean> {
-  return (await getUserSetting(userId, "sound_enabled")) !== "false";
+  return parseSoundEnabled(await getUserSetting(userId, "sound_enabled"));
+}
+
+export function parseSoundEnabled(raw: string | null | undefined): boolean {
+  return raw !== "false";
 }
 
 export async function getTheme(userId: string): Promise<"system" | "light" | "dark"> {
-  const v = await getUserSetting(userId, "theme");
-  return v === "light" || v === "dark" ? v : "system";
+  return parseTheme(await getUserSetting(userId, "theme"));
+}
+
+export function parseTheme(raw: string | null | undefined): "system" | "light" | "dark" {
+  return raw === "light" || raw === "dark" ? raw : "system";
 }
 
 // ── Onboarding (P5.7) ──────────────────────────────────────────────────────

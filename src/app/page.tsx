@@ -1,14 +1,15 @@
-import { listFollowedCompanies, listPinnedCountries } from "@/db";
-import { getGlobalKeywords, needsOnboarding } from "@/lib/settings";
 import { getSessionUser } from "@/lib/authz";
+import { contextGlobalKeywords, contextNeedsOnboarding, getUserContext } from "@/lib/user-context";
 import { redirect } from "next/navigation";
 import { Landing } from "@/components/marketing/Landing";
-import { FACET_LIMIT, loadJobView } from "@/lib/job-view";
+import { FACET_LIMIT, loadJobView, type JobView } from "@/lib/job-view";
 import { FilterBar } from "@/components/FilterBar";
 import { JobFeed } from "@/components/JobFeed";
 import { RefreshButton } from "@/components/RefreshButton";
 import { FacetSidebar } from "@/components/FacetSidebar";
 import { connection } from "next/server";
+import { Suspense } from "react";
+import { ListingCardSkeleton, Skeleton } from "@/components/Skeleton";
 import { ArrowUpRight, BriefcaseBusiness, Sparkles } from "lucide-react";
 import Link from "next/link";
 
@@ -33,14 +34,15 @@ export default async function DashboardPage({
   await connection(); // always render at request time (DB reads must not be prerendered)
   const user = await getSessionUser();
   if (!user) return <Landing />; // signed-out visitors
-  if (await needsOnboarding(user.id)) redirect("/onboarding");
-  const sp = await searchParams;
-  const globalKeywords = await getGlobalKeywords(user.id);
-  // one page of rows + aggregated facet counts, computed in SQL
-  const view = await loadJobView(user.id, sp, globalKeywords, { facetLimit: FACET_LIMIT });
-  const followedCompanies = new Set((await listFollowedCompanies(user.id)).map((n) => n.toLowerCase()));
+  // settings, pins and follows in one round trip (shared with the layout header)
+  const [ctx, sp] = await Promise.all([getUserContext(user.id), searchParams]);
+  if (contextNeedsOnboarding(ctx)) redirect("/onboarding");
+  // one page of rows + aggregated facet counts, computed in SQL. Not awaited
+  // here: the hero paints first, counts and feed stream in behind it.
+  const view = loadJobView(user.id, sp, contextGlobalKeywords(ctx), { facetLimit: FACET_LIMIT });
+  const followedCompanies = new Set(ctx.followedCompanies.map((n) => n.toLowerCase()));
   const isAdmin = user.role === "admin";
-  const pinnedCountries = (await listPinnedCountries(user.id)).map((n) => n.toLowerCase());
+  const pinnedCountries = ctx.pinnedCountries.map((n) => n.toLowerCase());
 
   return (
     <div className="flex flex-col gap-5">
@@ -67,11 +69,19 @@ export default async function DashboardPage({
           <div className="flex flex-wrap gap-2.5">
             <div className="min-w-32 rounded-2xl border border-white/10 bg-white/10 px-3.5 py-3 backdrop-blur-sm">
               <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">New matches</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-white">{view.totalNew}</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-white">
+                <Suspense fallback={<StatPlaceholder />}>
+                  <ViewNumber view={view} pick={(v) => v.totalNew} />
+                </Suspense>
+              </p>
             </div>
             <div className="min-w-32 rounded-2xl border border-white/10 bg-white/10 px-3.5 py-3 backdrop-blur-sm">
               <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">Showing now</p>
-              <p className="mt-1 text-2xl font-bold tracking-tight text-white">{view.totalVisible}</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight text-white">
+                <Suspense fallback={<StatPlaceholder />}>
+                  <ViewNumber view={view} pick={(v) => v.totalVisible} />
+                </Suspense>
+              </p>
             </div>
             <Link
               href={isAdmin ? "/admin/boards" : "/settings"}
@@ -90,26 +100,83 @@ export default async function DashboardPage({
         </div>
       </section>
 
-      <div className="flex flex-col gap-5 lg:flex-row lg:gap-6">
-        <FacetSidebar facets={view.facets} pinnedCountries={pinnedCountries} />
+      <Suspense fallback={<FeedSkeleton />}>
+        <Feed
+          view={view}
+          searchParams={sp}
+          followedCompanies={followedCompanies}
+          pinnedCountries={pinnedCountries}
+          isAdmin={isAdmin}
+        />
+      </Suspense>
+    </div>
+  );
+}
 
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-ink">Latest openings</p>
-              <p className="mt-1 text-sm text-muted">
-                {view.selections.skill.length > 0 && `Skills: ${view.selections.skill.join(", ")} · `}
-                {view.selections.country.length > 0 && `Countries: ${view.selections.country.join(", ")} · `}
-                {sp.showAll ? "All board results" : "Matched to your keywords"}
-              </p>
-            </div>
-            <p className="text-xs font-medium text-faint">Page {view.currentPage} of {view.totalPages}</p>
+/** Count in a hero tile; streams in once the feed query resolves. */
+async function ViewNumber({ view, pick }: { view: Promise<JobView>; pick: (v: JobView) => number }) {
+  return pick(await view);
+}
+
+/** Same line box as the number (no shift when it arrives). */
+function StatPlaceholder() {
+  return <span className="inline-block h-[1em] w-10 animate-pulse rounded bg-white/15 align-[-0.1em]" aria-hidden="true" />;
+}
+
+/** Facets, filters and listings: everything that needs the feed query. */
+async function Feed({
+  view: viewPromise,
+  searchParams: sp,
+  followedCompanies,
+  pinnedCountries,
+  isAdmin,
+}: {
+  view: Promise<JobView>;
+  searchParams: SearchParams;
+  followedCompanies: Set<string>;
+  pinnedCountries: string[];
+  isAdmin: boolean;
+}) {
+  const view = await viewPromise;
+  return (
+    <div className="flex flex-col gap-5 lg:flex-row lg:gap-6">
+      <FacetSidebar facets={view.facets} pinnedCountries={pinnedCountries} />
+
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-teal-ink">Latest openings</p>
+            <p className="mt-1 text-sm text-muted">
+              {view.selections.skill.length > 0 && `Skills: ${view.selections.skill.join(", ")} · `}
+              {view.selections.country.length > 0 && `Countries: ${view.selections.country.join(", ")} · `}
+              {sp.showAll ? "All board results" : "Matched to your keywords"}
+            </p>
           </div>
-
-          <FilterBar />
-
-          <JobFeed view={view} searchParams={sp} followedCompanies={followedCompanies} isAdmin={isAdmin} />
+          <p className="text-xs font-medium text-faint">Page {view.currentPage} of {view.totalPages}</p>
         </div>
+
+        <FilterBar />
+
+        <JobFeed view={view} searchParams={sp} followedCompanies={followedCompanies} isAdmin={isAdmin} />
+      </div>
+    </div>
+  );
+}
+
+/** Mirrors the feed area of the route's loading.tsx. */
+function FeedSkeleton() {
+  return (
+    <div className="flex flex-col gap-5 lg:flex-row lg:gap-6" aria-busy="true" aria-label="Loading jobs">
+      <div className="hidden w-64 shrink-0 flex-col gap-3 lg:flex">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-32 w-full rounded-xl" delay={i * 120} />
+        ))}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <Skeleton className="h-11 w-full rounded-xl" />
+        {[0, 1, 2, 3, 4].map((i) => (
+          <ListingCardSkeleton key={i} delay={i * 120} />
+        ))}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ export const metadata = { title: "Privacy" };
 
 export default function PrivacyPage() {
   return (
-    <article className="mx-auto flex max-w-3xl flex-col gap-4 text-sm leading-6 text-foreground">
+    <article data-signed-out-page className="mx-auto flex max-w-3xl flex-col gap-4 text-sm leading-6 text-foreground">
       <p role="note" className="rounded-lg border border-border-strong bg-surface-raised px-4 py-2 font-semibold">
         Draft — review with a lawyer before launch
       </p>

@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { listPinnedCountries } from "@/db";
-import { getTheme, isSoundEnabled } from "@/lib/settings";
 import { getSessionUser } from "@/lib/authz";
+import { contextSoundEnabled, contextTheme, getUserContext } from "@/lib/user-context";
 import { PinnedCountryChip } from "@/components/PinnedCountryChip";
 import { ToastProvider } from "@/components/ui";
 import { AppHeader } from "@/components/AppHeader";
@@ -17,7 +16,8 @@ import { Radar } from "lucide-react";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// Mono only styles API-key snippets in Settings: load it on use, don't preload it on every page.
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"], preload: false });
 
 const SITE_URL =
   process.env.AUTH_URL ||
@@ -34,7 +34,8 @@ export const metadata: Metadata = {
 async function Header() {
   await connection(); // request-time read
   const user = await getSessionUser();
-  const pinned = user ? await listPinnedCountries(user.id) : [];
+  const ctx = user ? await getUserContext(user.id) : null;
+  const pinned = ctx?.pinnedCountries ?? [];
   return (
     <>
       <AppHeader
@@ -46,16 +47,20 @@ async function Header() {
           <PinnedCountryChip key={country} country={country} />
         ))}
       />
-      {user && <ThemeSync theme={await getTheme(user.id)} />}
+      {ctx && <ThemeSync theme={contextTheme(ctx)} />}
     </>
   );
 }
 
-/** Refresh progress bar; streams in without blocking layout render. */
+/**
+ * Refresh progress bar; streams in without blocking layout render. Admin-only,
+ * like the status endpoint it polls — anyone else would only collect 401/403s.
+ */
 async function RefreshStatus() {
   await connection(); // request-time read (sound setting)
   const user = await getSessionUser();
-  return <RefreshStatusBar soundEnabled={user ? await isSoundEnabled(user.id) : true} />;
+  if (user?.role !== "admin") return null;
+  return <RefreshStatusBar soundEnabled={contextSoundEnabled(await getUserContext(user.id))} />;
 }
 
 export default function RootLayout({
@@ -71,14 +76,15 @@ export default function RootLayout({
         <ToastProvider>
         <a className="skip-link" href="#main-content">Skip to content</a>
         <header className="sticky top-0 z-40 border-b border-border bg-surface-raised/90 backdrop-blur-xl">
-          <Suspense fallback={<AppHeader />}>
+          <Suspense fallback={<AppHeader fallback />}>
             <Header />
           </Suspense>
           <Suspense fallback={null}>
             <RefreshStatus />
           </Suspense>
         </header>
-        <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+        {/* min-h-dvh keeps the footer below the fold, so streamed-in content never shifts it */}
+        <main id="main-content" className="mx-auto min-h-dvh w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
           {/* pages read the DB at request time (connection()); stream them under the static shell */}
           <Suspense fallback={null}>{children}</Suspense>
         </main>

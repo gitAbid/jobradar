@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next-auth", () => ({ default: () => ({ auth: (f: unknown) => f }) }));
 vi.mock("next/server", () => ({ NextResponse: {} }));
 
-import { isPublicPath } from "@/proxy";
+import { isPublicPath, landingRewritePath } from "@/proxy";
 import { sanitizeCallbackUrl } from "@/lib/callback-url";
 
 describe("isPublicPath", () => {
@@ -34,6 +34,10 @@ describe("isPublicPath", () => {
     ["/admin/boards", false],
     ["/signinx", false],
     ["/admin/boards/1", false],
+    ["/.well-known/ai-catalog.json", true],
+    ["/.well-known/security.txt", true],
+    ["/.well-knownx", false],
+    ["/welcome", true],
   ])("%s -> %s", (p, expected) => {
     expect(isPublicPath(p)).toBe(expected);
   });
@@ -46,5 +50,14 @@ describe("sanitizeCallbackUrl", () => {
   );
   it("accepts relative paths", () => {
     expect(sanitizeCallbackUrl("/following?x=1")).toBe("/following?x=1");
+  });
+});
+
+describe("landingRewritePath", () => {
+  it("serves the static landing only to anonymous visitors of /", () => {
+    expect(landingRewritePath("/", false)).toBe("/welcome");
+    expect(landingRewritePath("/", true)).toBeNull();
+    expect(landingRewritePath("/saved", false)).toBeNull();
+    expect(landingRewritePath("/privacy", false)).toBeNull();
   });
 });

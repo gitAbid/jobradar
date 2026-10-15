@@ -19,9 +19,11 @@ function NavItem({
   href,
   label,
   icon: Icon,
-}: (typeof NAV_LINKS)[number] | typeof ADMIN_LINK) {
+  placeholder = false,
+}: ((typeof NAV_LINKS)[number] | typeof ADMIN_LINK) & { placeholder?: boolean }) {
   const pathname = usePathname();
-  const active = isNavLinkActive(pathname, href);
+  // the static fallback never depends on the pathname (it may be a rewrite target)
+  const active = !placeholder && isNavLinkActive(pathname, href);
 
   return (
     <Link
@@ -51,6 +53,7 @@ export function AppHeader({
   pinned,
   hasPinned = false,
   signedOut = false,
+  fallback = false,
 }: {
   isAdmin?: boolean;
   userMenu?: ReactNode;
@@ -58,10 +61,18 @@ export function AppHeader({
   hasPinned?: boolean;
   /** Logo + user menu only (landing page visitors). */
   signedOut?: boolean;
+  /**
+   * Static shell before the session is known. Renders the signed-in shape, but
+   * its signed-in-only parts are hidden by CSS on pages marked
+   * `data-signed-out-page` (see globals.css), so the common signed-out case
+   * streams in without a layout shift.
+   */
+  fallback?: boolean;
 }) {
   const links = isAdmin ? [...NAV_LINKS, ADMIN_LINK] : NAV_LINKS;
   // the sign-in page is its own call to action
   const onSignIn = usePathname() === "/signin";
+  const guess = fallback ? { "data-signed-in-only": "" } : {};
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6">
       <div className="flex min-h-[3.5rem] items-center gap-4 lg:min-h-[4.25rem]">
@@ -83,9 +94,9 @@ export function AppHeader({
         </Link>
 
         {!signedOut && (
-        <nav className="ml-auto hidden items-center gap-1 rounded-2xl bg-subtle p-1 lg:flex" aria-label="Primary navigation">
+        <nav {...guess} className="ml-auto hidden items-center gap-1 rounded-2xl bg-subtle p-1 lg:flex" aria-label="Primary navigation">
           {links.map((link) => (
-            <NavItem key={link.href} {...link} />
+            <NavItem key={link.href} {...link} placeholder={fallback} />
           ))}
         </nav>
         )}
@@ -95,11 +106,12 @@ export function AppHeader({
 
       {!signedOut && (
       <div
+        {...guess}
         className={`nav-scroll -mx-4 flex items-center gap-1 overflow-x-auto border-t border-border px-4 py-1.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] sm:-mx-6 sm:px-6 ${hasPinned ? "" : "lg:hidden"}`}
       >
         <nav className="flex shrink-0 items-center gap-1 lg:hidden" aria-label="Primary navigation">
           {links.map((link) => (
-            <NavItem key={link.href} {...link} />
+            <NavItem key={link.href} {...link} placeholder={fallback} />
           ))}
         </nav>
         {hasPinned && (

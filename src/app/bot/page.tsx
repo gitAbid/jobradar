@@ -4,7 +4,7 @@ export const metadata = { title: "JobRadarBot" };
 
 export default function BotPage() {
   return (
-    <main className="mx-auto max-w-2xl space-y-4 p-6 text-sm leading-6">
+    <article data-signed-out-page className="mx-auto max-w-2xl space-y-4 p-6 text-sm leading-6">
       <h1 className="text-xl font-semibold">JobRadarBot</h1>
       <p>
         JobRadarBot is the crawler behind JobRadar, a personal job-aggregation tool. It
@@ -22,6 +22,6 @@ export default function BotPage() {
         Questions or removal requests: contact the site operator at the address listed on the
         site hosting this page.
       </p>
-    </main>
+    </article>
   );
 }
