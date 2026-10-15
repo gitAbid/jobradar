@@ -1,4 +1,5 @@
 import type { Board, BoardType, Listing, ListingStatus } from "@/lib/types";
+import { countryFacetValue } from "@/lib/facets";
 import {
   remoteQuery,
   remoteRun,
@@ -160,6 +161,7 @@ const INSERT_COLUMNS = [
   "fetched_at",
   "search_text",
   "description",
+  "country",
 ] as const;
 
 /**
@@ -192,6 +194,9 @@ export async function insertListings(boardId: number, rows: NewListingRow[]): Pr
         tsOrNull(r.fetchedAt) ?? new Date().toISOString(),
         r.searchText,
         r.description,
+        // precomputed here: a null country sends the feed query down its
+        // per-row regex CASE, which is far too slow at table scale
+        countryFacetValue({ location: r.location, isRemote: r.isRemote, remoteScope: r.remoteScope }),
       );
       return `(${INSERT_COLUMNS.map((c, n) => `$${base + n + 1}${COLUMN_CASTS[c] ?? ""}`).join(", ")})`;
     });
@@ -258,7 +263,9 @@ export async function persistEnrichment(
   const columns = ENRICH_COLUMNS.filter(([, get]) =>
     patches.some((p) => get(p) !== undefined),
   );
-  const setClause = columns.map(([col], n) => `${col} = $${n + 1}${COLUMN_CASTS[col] ?? ""}`).join(", ");
+  let setClause = columns.map(([col], n) => `${col} = $${n + 1}${COLUMN_CASTS[col] ?? ""}`).join(", ");
+  // a new location invalidates the precomputed country; the post-refresh backfill recomputes it
+  if (columns.some(([col]) => col === "location")) setClause += ", country = null";
   const extraWhere = opts.onlyWhenUnenriched ? " and skills = '[]'::jsonb" : "";
   for (const p of patches) {
     const values = columns.map(([, get]) => get(p));
