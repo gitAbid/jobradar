@@ -393,13 +393,19 @@ const FACET_TITLES: Record<FacetParam, string> = {
   source: "Source",
 };
 
+const MAX_SPECULATIVE_PAGE = 10_000;
+
 /** Board id → its extra filter keywords (a tiny table). */
 async function loadBoardKeywords(exec: SqlExec): Promise<BoardKeywords> {
   const rows = await exec("select id, filter_keywords from boards", []);
   return new Map(rows.map((r) => [Number(r.id), parseStringArray(r.filter_keywords)]));
 }
 
-/** Two round trips after the (tiny) boards lookup: facets+totals, then the page. */
+/**
+ * Two round trips: the (tiny) boards lookup, then facets+totals and the page
+ * concurrently. The page query runs speculatively for the requested page; it
+ * is re-run only when that page turns out to be out of range (clamped).
+ */
 export async function runJobQuery(
   exec: SqlExec,
   sp: RawParams,
@@ -409,8 +415,16 @@ export async function runJobQuery(
 ): Promise<JobView> {
   const boardKeywords = await loadBoardKeywords(exec);
 
+  const parsedPage = Number.parseInt(sp.page ?? "1", 10);
+  const requestedPage = Math.max(Number.isNaN(parsedPage) ? 1 : parsedPage, 1);
+  // bounded so a junk ?page= can't produce an out-of-range OFFSET before clamping
+  const speculativePage = Math.min(requestedPage, MAX_SPECULATIVE_PAGE);
   const facetQ = buildFacetQuery(sp, globalKeywords, boardKeywords, opts, userId);
-  const facetRows = await exec(facetQ.text, facetQ.values);
+  const speculativeQ = buildPageQuery(sp, globalKeywords, boardKeywords, opts, speculativePage, userId);
+  const [facetRows, speculativeRows] = await Promise.all([
+    exec(facetQ.text, facetQ.values),
+    exec(speculativeQ.text, speculativeQ.values),
+  ]);
 
   const counts: Record<FacetParam, Map<string, number>> = {
     skill: new Map(),
@@ -444,16 +458,15 @@ export async function runJobQuery(
   });
 
   const totalPages = Math.max(1, Math.ceil(totalVisible / opts.pageSize));
-  const requestedPage = Number.parseInt(sp.page ?? "1", 10);
-  const currentPage = Math.min(
-    Math.max(Number.isNaN(requestedPage) ? 1 : requestedPage, 1),
-    totalPages,
-  );
+  const currentPage = Math.min(requestedPage, totalPages);
 
   let entries: JobEntry[] = [];
   if (totalVisible > 0) {
-    const pageQ = buildPageQuery(sp, globalKeywords, boardKeywords, opts, currentPage, userId);
-    const rows = await exec(pageQ.text, pageQ.values);
+    let rows = speculativeRows;
+    if (currentPage !== speculativePage) {
+      const pageQ = buildPageQuery(sp, globalKeywords, boardKeywords, opts, currentPage, userId);
+      rows = await exec(pageQ.text, pageQ.values);
+    }
     entries = rows.map((row) => {
       const listing = rowToFeedListing(row);
       return { listing, matched: matchedKeywords(listing, globalKeywords) };

@@ -1,5 +1,6 @@
-import { LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
+import { LISTING_POOL_SELECT, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
 import { requirePageUser } from "@/lib/authz";
+import { getUserContext } from "@/lib/user-context";
 import type { FilterableListing, ListingStatus } from "@/lib/types";
 import { ArrowRight, Heart, Send } from "lucide-react";
 import Link from "next/link";
@@ -20,20 +21,16 @@ export default async function SavedPage() {
   await connection(); // request-time rendering
   const user = await requirePageUser();
 
-  // Accurate totals per column (cheap aggregate).
-  const totals = new Map<string, number>(
-    (
-      await q<{ status: string; n: number }>(
-        `select status, count(*) as n from user_listing_state
-         where user_id = $1::uuid and status in ('favorite','applied') group by status`,
-        [user.id],
-      )
-    ).map((r) => [r.status, r.n]),
-  );
-
-  // Cap each column: hydrating thousands of cards blocks the page for seconds.
-  const itemsByStatus = new Map<string, FilterableListing[]>(
-    await Promise.all(
+  // Independent reads, one round trip: totals, both columns, follows.
+  const [totalRows, columns, ctx] = await Promise.all([
+    // Accurate totals per column (cheap aggregate).
+    q<{ status: string; n: number }>(
+      `select status, count(*) as n from user_listing_state
+       where user_id = $1::uuid and status in ('favorite','applied') group by status`,
+      [user.id],
+    ),
+    // Cap each column: hydrating thousands of cards blocks the page for seconds.
+    Promise.all(
       COLUMNS.map(async (col) => {
         const rows = await q<Record<string, unknown>>(
           `select ${LISTING_POOL_SELECT}, ${USER_STATE_SELECT}, b.name as board_name
@@ -47,9 +44,12 @@ export default async function SavedPage() {
         return [col.status, rows.map((r) => rowToListing(r as never)) as FilterableListing[]] as const;
       }),
     ),
-  );
+    getUserContext(user.id),
+  ]);
+  const totals = new Map<string, number>(totalRows.map((r) => [r.status, r.n]));
+  const itemsByStatus = new Map<string, FilterableListing[]>(columns);
 
-  const followedCompanies = new Set((await listFollowedCompanies(user.id)).map((n) => n.toLowerCase()));
+  const followedCompanies = new Set(ctx.followedCompanies.map((n) => n.toLowerCase()));
   const favoriteTotal = totals.get("favorite") ?? 0;
   const appliedTotal = totals.get("applied") ?? 0;
 

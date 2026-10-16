@@ -2,7 +2,9 @@ import { connection } from "next/server";
 import { Settings2 } from "lucide-react";
 import { signOut } from "@/auth";
 import { requirePageUser } from "@/lib/authz";
-import { getGlobalKeywords, getTheme, isSoundEnabled } from "@/lib/settings";
+import { listApiKeys } from "@/lib/api/keys";
+import { apiKeys } from "@/lib/api/keys-store";
+import { contextGlobalKeywords, contextSoundEnabled, contextTheme, getUserContext } from "@/lib/user-context";
 import { PreferencesForm } from "@/components/settings/PreferencesForm";
 import { ThemeForm } from "@/components/settings/ThemeForm";
 import { AccountSection } from "./account/AccountSection";
@@ -18,11 +20,11 @@ async function logout() {
 export default async function SettingsPage() {
   await connection(); // DB reads must not be prerendered
   const user = await requirePageUser();
-  const [keywords, sound, theme] = await Promise.all([
-    getGlobalKeywords(user.id),
-    isSoundEnabled(user.id),
-    getTheme(user.id),
-  ]);
+  // context is shared with the layout header; keys load alongside it
+  const [ctx, keys] = await Promise.all([getUserContext(user.id), listApiKeys(apiKeys(), user.id)]);
+  const keywords = contextGlobalKeywords(ctx);
+  const sound = contextSoundEnabled(ctx);
+  const theme = contextTheme(ctx);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8">
@@ -46,7 +48,7 @@ export default async function SettingsPage() {
         <ThemeForm theme={theme} />
       </section>
 
-      <ApiKeysSection userId={user.id} />
+      <ApiKeysSection keys={keys} />
 
       <AccountSection email={user.email} signOutAction={logout} />
     </div>

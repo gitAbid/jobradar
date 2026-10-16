@@ -76,7 +76,7 @@ function FeedPreview() {
 
 export function Landing() {
   return (
-    <div className="flex flex-col gap-20 pb-8 sm:gap-28">
+    <div data-signed-out-page className="flex flex-col gap-20 pb-8 sm:gap-28">
       <section className="relative grid items-center gap-12 pt-6 sm:pt-12 lg:grid-cols-[1.1fr_1fr] lg:gap-16 lg:pt-16">
         {/* Full-bleed backdrop: spans the viewport and fades out, so no glow ends on a hard edge. */}
         <div

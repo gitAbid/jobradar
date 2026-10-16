@@ -1,14 +1,12 @@
 import { KeyRound } from "lucide-react";
-import { listApiKeys } from "@/lib/api/keys";
-import { apiKeys } from "@/lib/api/keys-store";
+import type { listApiKeys } from "@/lib/api/keys";
 import { CreateKeyForm } from "@/components/api-keys/CreateKeyForm";
 import { RelativeTime } from "@/components/RelativeTime";
 import { EmptyState } from "@/components/ui";
 import { RevokeButton } from "@/components/api-keys/RevokeButton";
 
-/** API keys section of /settings (the caller has already resolved the user). */
-export async function ApiKeysSection({ userId }: { userId: string }) {
-  const keys = await listApiKeys(apiKeys(), userId);
+/** API keys section of /settings (the page loads the caller's keys alongside its other reads). */
+export function ApiKeysSection({ keys }: { keys: Awaited<ReturnType<typeof listApiKeys>> }) {
 
   return (
     <section id="api-keys" className="flex scroll-mt-24 flex-col gap-4">

@@ -1,7 +1,8 @@
 import { connection } from "next/server";
 import { requirePageUser } from "@/lib/authz";
 import Link from "next/link";
-import { attachDescriptions, LISTING_POOL_SELECT, listFollowedCompanies, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
+import { LISTING_POOL_SELECT, q, rowToListing, USER_STATE_SELECT, userStateJoin } from "@/db";
+import { getUserContext } from "@/lib/user-context";
 import { UnfollowButton } from "@/components/UnfollowButton";
 import { ListingCard } from "@/components/ListingCard";
 import { EmptyState } from "@/components/ui";
@@ -23,9 +24,19 @@ export default async function FollowingPage({
 }) {
   await connection(); // request-time rendering
   const user = await requirePageUser();
-  const sp = await searchParams;
+  // Accurate per-company opening counts (unaffected by the feed cap below);
+  // depends only on the user, so it runs alongside everything else.
+  const countsQuery = q<{ company: string; n: number }>(
+    `select min(l.company) as company, count(*) as n
+     from listings l join followed_companies f on lower(f.name) = lower(l.company)
+     where f.user_id = $1::uuid
+     group by lower(l.company)`,
+    [user.id],
+  );
+  countsQuery.catch(() => {}); // still awaited below; just never an unhandled rejection
+  const [sp, ctx] = await Promise.all([searchParams, getUserContext(user.id)]);
 
-  const followed = await listFollowedCompanies(user.id);
+  const followed = ctx.followedCompanies;
   const selected = sp.company?.trim();
   // only accept a filter that matches a followed company (case-insensitive)
   const activeCompany =
@@ -33,11 +44,12 @@ export default async function FollowingPage({
       ? followed.find((n) => n.toLowerCase() === selected.toLowerCase())!
       : null;
 
-  // Openings whose company is followed, newest first.
-  // Capped: a prolific company shouldn't produce an unbounded page.
-  const rows = followed.length
-    ? await q<Record<string, unknown>>(
-        `select ${LISTING_POOL_SELECT}, ${USER_STATE_SELECT}, b.name as board_name
+  // Openings whose company is followed, newest first (description inline: the
+  // page shows all of them). Capped: a prolific company shouldn't produce an
+  // unbounded page.
+  const rowsQuery = followed.length
+    ? q<Record<string, unknown>>(
+        `select ${LISTING_POOL_SELECT}, l.description, ${USER_STATE_SELECT}, b.name as board_name
          from listings l join boards b on b.id = l.board_id
          ${userStateJoin("$1")}
          where exists (
@@ -49,24 +61,12 @@ export default async function FollowingPage({
          limit ${FOLLOWING_LIMIT}`,
         activeCompany ? [user.id, activeCompany] : [user.id],
       )
-    : [];
+    : Promise.resolve([]);
 
+  const [rows, countRows] = await Promise.all([rowsQuery, countsQuery]);
   const listings = rows.map((r) => rowToListing(r as never)) as FilterableListing[];
-  await attachDescriptions(listings.map((listing) => ({ listing })));
   const followedSet = new Set(followed.map((n) => n.toLowerCase()));
-
-  // Accurate per-company opening counts (unaffected by the feed cap above).
-  const counts = new Map<string, number>(
-    (
-      await q<{ company: string; n: number }>(
-        `select min(l.company) as company, count(*) as n
-         from listings l join followed_companies f on lower(f.name) = lower(l.company)
-         where f.user_id = $1::uuid
-         group by lower(l.company)`,
-        [user.id],
-      )
-    ).map((r) => [r.company.toLowerCase(), r.n]),
-  );
+  const counts = new Map<string, number>(countRows.map((r) => [r.company.toLowerCase(), r.n]));
   const totalCount = [...counts.values()].reduce((a, b) => a + b, 0);
 
   return (

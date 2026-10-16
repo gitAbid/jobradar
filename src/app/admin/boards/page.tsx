@@ -78,7 +78,7 @@ function Metric({ label, value }: { label: string; value: number }) {
 function BoardCard({ board: b }: { board: ReturnType<typeof rowToBoard> }) {
   const isHealthy = b.lastStatus?.startsWith("ok") ?? false;
   return (
-    <article className={`rounded-2xl border bg-surface-raised p-4 shadow-[0_6px_20px_rgb(15_42_67/0.045)] sm:p-5 ${b.enabled ? "border-border" : "border-border opacity-65"}`}>
+    <article className={`rounded-2xl border bg-surface-raised p-4 shadow-[0_6px_20px_rgb(15_42_67/0.045)] sm:p-5 ${b.enabled ? "border-border" : "border-dashed border-border-strong bg-surface"}`}>
       <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr_1.25fr_auto] lg:items-center">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

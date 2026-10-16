@@ -7,6 +7,7 @@ import {
   attachDescriptions,
   insertListings,
   LISTING_POOL_SELECT,
+  persistEnrichment,
   q,
   qDescriptionsByIds,
   qOne,
@@ -101,6 +102,30 @@ beforeEach(async () => {
 afterEach(async () => {
   setRemoteHarness(null);
   await db.close();
+});
+
+describe("precomputed country", () => {
+  it("is set on insert so the feed never falls back to its per-row CASE", async () => {
+    const rows = await q<{ external_id: string; country: string | null }>(
+      "select external_id, country from listings order by external_id",
+    );
+    expect(rows).toEqual([
+      { external_id: "bd-dhaka", country: "Bangladesh" },
+      { external_id: "bd-remote", country: "Remote · Anywhere" },
+      { external_id: "de-berlin", country: "Germany" },
+    ]);
+  });
+
+  it("is cleared when enrichment changes the location", async () => {
+    await persistEnrichment(boardId, [
+      { externalId: "de-berlin", searchText: "", skills: "[]", description: "", location: "Tokyo, Japan" },
+    ]);
+    const row = await qOne<{ country: string | null }>(
+      "select country from listings where external_id = $1",
+      ["de-berlin"],
+    );
+    expect(row?.country).toBeNull();
+  });
 });
 
 describe("pruned listings pool", () => {

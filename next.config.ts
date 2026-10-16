@@ -31,6 +31,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // 'use cache' for the shared listings pool (see src/lib/job-query.ts)
   cacheComponents: true,
+  poweredByHeader: false,
   // Legacy URLs from before the P5.6 IA change (query strings pass through).
   // /bangladesh is a page redirect (src/app/bangladesh) that uses the bd.ts preset.
   async redirects() {

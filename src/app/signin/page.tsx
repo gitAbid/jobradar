@@ -38,7 +38,7 @@ export default async function SignInPage({
     "inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-border-strong bg-surface-raised px-4 text-sm font-semibold text-foreground shadow-xs transition-all duration-150 hover:-translate-y-px hover:bg-subtle hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
 
   return (
-    <div className="flex min-h-[calc(100dvh-14rem)] items-center justify-center overflow-x-clip py-6 sm:py-10">
+    <div data-signed-out-page className="flex min-h-[calc(100dvh-14rem)] items-center justify-center overflow-x-clip py-6 sm:py-10">
       <div className="animate-fade-up relative w-full max-w-sm">
         <div aria-hidden="true" className="absolute -inset-y-8 inset-x-0 -z-10 rounded-[2.5rem] bg-primary/10 blur-3xl sm:-inset-8" />
         <div className="rounded-2xl border border-border bg-surface-raised p-6 shadow-lg sm:p-8">

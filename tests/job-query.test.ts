@@ -212,7 +212,7 @@ describe("SQL feed parity with buildJobView", () => {
     await expectParity({});
   });
   it("paging incl. out-of-range and junk pages", async () => {
-    for (const page of ["1", "2", "3", "99", "0", "-4", "abc", "2x"]) await expectParity({ page });
+    for (const page of ["1", "2", "3", "99", "0", "-4", "abc", "2x", "999999999999999999999999"]) await expectParity({ page });
   });
   it("showAll", async () => {
     await expectParity({ showAll: "1" });
